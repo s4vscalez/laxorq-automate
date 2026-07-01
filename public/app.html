@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Laxorq Automate</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0D0D0D">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Automate">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Outfit:wght@300;400;500;600&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --silver: #C2C2C2; --silver-light: #E0E0E0; --silver-dark: #888;
+    --ink: #0D0D0D; --green: #4CAF6E; --blue: #6495ED; --amber: #FFB74D; --purple: #BA68C8; --red: #E57373;
+    --fraunces: 'Fraunces', Georgia, serif; --outfit: 'Outfit', system-ui, sans-serif;
+  }
+  body { font-family: var(--outfit); background: var(--ink); color: var(--silver-light); min-height: 100vh; }
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0; opacity: 0.5;
+  }
+  .app { position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 100vh; }
+
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 14px 24px; border-bottom: 0.5px solid rgba(194,194,194,0.15);
+    background: rgba(13,13,13,0.9); backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 20;
+  }
+  .logo { font-family: var(--fraunces); font-size: 18px; font-weight: 600; letter-spacing: -0.5px; white-space: nowrap; }
+  .logo span { color: var(--silver-dark); font-weight: 300; font-style: italic; }
+  .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+  select.client-pick, .user-chip {
+    background: rgba(194,194,194,0.07); border: 0.5px solid rgba(194,194,194,0.18);
+    border-radius: 20px; padding: 6px 14px; font-size: 12px; color: var(--silver);
+    font-family: var(--outfit); outline: none;
+  }
+  select.client-pick { cursor: pointer; }
+  select.client-pick option { background: #1a1a1a; }
+  .user-chip { display: flex; align-items: center; gap: 8px; }
+  .user-role { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--silver-dark); background: rgba(194,194,194,0.1); padding: 2px 6px; border-radius: 6px; }
+
+  .main { display: flex; flex: 1; }
+  .sidebar {
+    width: 200px; flex-shrink: 0; padding: 24px 16px;
+    border-right: 0.5px solid rgba(194,194,194,0.1); display: flex; flex-direction: column; gap: 4px;
+  }
+  .nav-label { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--silver-dark); padding: 8px 10px 4px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px;
+    font-size: 13px; color: var(--silver-dark); cursor: pointer; transition: all 0.15s; border: 0.5px solid transparent;
+  }
+  .nav-item:hover { background: rgba(194,194,194,0.07); color: var(--silver-light); }
+  .nav-item.active { background: rgba(194,194,194,0.12); color: var(--silver-light); border-color: rgba(194,194,194,0.15); }
+  .nav-count { margin-left: auto; font-size: 10px; background: rgba(100,149,237,0.15); color: var(--blue); border-radius: 10px; padding: 1px 7px; }
+
+  .content { flex: 1; padding: 28px 32px; overflow-y: auto; max-width: 1120px; }
+  .page-header { margin-bottom: 24px; }
+  .page-title { font-family: var(--fraunces); font-size: 26px; font-weight: 400; letter-spacing: -0.5px; line-height: 1.2; }
+  .page-title em { font-style: italic; color: var(--silver-dark); }
+  .page-subtitle { font-size: 13px; color: var(--silver-dark); margin-top: 4px; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+  .stat-card { background: rgba(194,194,194,0.05); border: 0.5px solid rgba(194,194,194,0.12); border-radius: 12px; padding: 16px 18px; }
+  .stat-label { font-size: 11px; color: var(--silver-dark); letter-spacing: 0.04em; margin-bottom: 8px; }
+  .stat-value { font-family: var(--fraunces); font-size: 28px; font-weight: 300; line-height: 1; }
+  .stat-delta { font-size: 11px; margin-top: 6px; color: var(--silver-dark); }
+  .stat-delta.up { color: var(--green); }
+
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .section-title { font-family: var(--fraunces); font-size: 15px; font-weight: 400; letter-spacing: -0.2px; }
+
+  .workflow-grid { display: flex; flex-direction: column; gap: 10px; margin-bottom: 28px; }
+  .workflow-card { background: rgba(194,194,194,0.04); border: 0.5px solid rgba(194,194,194,0.12); border-radius: 12px; padding: 16px 20px; display: flex; align-items: center; gap: 16px; }
+  .wf-icon { width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .wf-icon.lead { background: rgba(76,175,110,0.12); } .wf-icon.followup { background: rgba(100,149,237,0.12); } .wf-icon.notify { background: rgba(186,104,200,0.12); }
+  .wf-info { flex: 1; } .wf-name { font-size: 13px; font-weight: 500; } .wf-desc { font-size: 11px; color: var(--silver-dark); margin-top: 2px; }
+  .wf-toggle { flex-shrink: 0; width: 36px; height: 20px; border-radius: 10px; background: rgba(76,175,110,0.25); border: 0.5px solid rgba(76,175,110,0.4); position: relative; cursor: pointer; transition: all 0.2s; }
+  .wf-toggle::after { content: ''; position: absolute; top: 2.5px; right: 4px; width: 14px; height: 14px; border-radius: 50%; background: var(--green); transition: right 0.2s, background 0.2s; }
+  .wf-toggle.off { background: rgba(194,194,194,0.1); border-color: rgba(194,194,194,0.2); } .wf-toggle.off::after { right: 17px; background: var(--silver-dark); }
+
+  @keyframes pulse-dot { 0%,100% { opacity:1; transform:scale(1);} 50% { opacity:0.5; transform:scale(0.8);} }
+  .live-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--green); margin-right:5px; vertical-align:middle; animation:pulse-dot 2s ease-in-out infinite; }
+
+  .activity-section { display: grid; grid-template-columns: 1fr 280px; gap: 20px; }
+  .activity-feed, .panel-card { background: rgba(194,194,194,0.04); border: 0.5px solid rgba(194,194,194,0.1); border-radius: 12px; padding: 18px 20px; }
+  .activity-item { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 0.5px solid rgba(194,194,194,0.07); }
+  .activity-item:last-child { border-bottom: none; }
+  .act-icon { width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+  .act-icon.lead { background: rgba(76,175,110,0.12); } .act-icon.msg { background: rgba(100,149,237,0.12); } .act-icon.followup { background: rgba(255,183,77,0.12); } .act-icon.system { background: rgba(194,194,194,0.1); }
+  .act-title { font-size: 12px; line-height: 1.4; } .act-time { font-size: 10px; color: var(--silver-dark); margin-top: 2px; }
+
+  .right-panel { display: flex; flex-direction: column; gap: 14px; }
+  .panel-title { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--silver-dark); margin-bottom: 12px; }
+  .mini-chart { display: flex; align-items: flex-end; gap: 4px; height: 48px; }
+  .mini-bar { flex: 1; border-radius: 3px 3px 0 0; background: rgba(194,194,194,0.15); min-height: 4px; }
+  .mini-bar.today { background: rgba(194,194,194,0.45); }
+  .chart-labels { margin-top: 8px; font-size: 10px; color: var(--silver-dark); display: flex; justify-content: space-between; }
+
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; padding: 2px 8px; border-radius: 20px; letter-spacing: 0.04em; }
+  .badge.live { background: rgba(76,175,110,0.12); color: var(--green); border: 0.5px solid rgba(76,175,110,0.3); }
+  .badge.paused { background: rgba(194,194,194,0.08); color: var(--silver-dark); border: 0.5px solid rgba(194,194,194,0.15); }
+  .badge.hot { background: rgba(229,115,115,0.12); color: var(--red); border: 0.5px solid rgba(229,115,115,0.3); }
+  .badge.warm { background: rgba(255,183,77,0.12); color: var(--amber); border: 0.5px solid rgba(255,183,77,0.3); }
+  .badge.cold { background: rgba(100,149,237,0.12); color: var(--blue); border: 0.5px solid rgba(100,149,237,0.3); }
+  .badge.gray { background: rgba(194,194,194,0.08); color: var(--silver-dark); border: 0.5px solid rgba(194,194,194,0.15); }
+  .badge.green { background: rgba(76,175,110,0.12); color: var(--green); border: 0.5px solid rgba(76,175,110,0.3); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--silver-dark); padding: 8px 10px; border-bottom: 0.5px solid rgba(194,194,194,0.15); font-weight: 500; }
+  td { padding: 10px; border-bottom: 0.5px solid rgba(194,194,194,0.07); vertical-align: top; }
+  tr.rowlink { cursor: pointer; } tr.rowlink:hover td { background: rgba(194,194,194,0.04); }
+
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; border: 0.5px solid rgba(194,194,194,0.2); background: rgba(194,194,194,0.07); font-size: 12px; color: var(--silver-light); cursor: pointer; font-family: var(--outfit); text-decoration: none; transition: all 0.15s; }
+  .btn:hover { background: rgba(194,194,194,0.13); }
+  .btn.primary { background: rgba(76,175,110,0.15); border-color: rgba(76,175,110,0.4); color: var(--green); } .btn.primary:hover { background: rgba(76,175,110,0.25); }
+  .btn.wa { background: rgba(76,175,110,0.15); border-color: rgba(76,175,110,0.4); color: var(--green); }
+  .btn.danger { color: var(--red); border-color: rgba(229,115,115,0.3); }
+  .btn.sm { padding: 4px 10px; font-size: 11px; }
+  input, textarea, select { width: 100%; background: rgba(194,194,194,0.06); border: 0.5px solid rgba(194,194,194,0.18); border-radius: 8px; padding: 9px 12px; font-size: 12px; color: var(--silver-light); font-family: var(--outfit); outline: none; }
+  input:focus, textarea:focus { border-color: rgba(194,194,194,0.4); }
+  label.fld { display: block; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--silver-dark); margin: 12px 0 5px; }
+  textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
+  .card { background: rgba(194,194,194,0.04); border: 0.5px solid rgba(194,194,194,0.12); border-radius: 12px; padding: 18px 20px; margin-bottom: 14px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .muted { color: var(--silver-dark); font-size: 11px; }
+  .mono { font-family: ui-monospace, Consolas, monospace; font-size: 11px; background: rgba(194,194,194,0.07); padding: 2px 6px; border-radius: 4px; word-break: break-all; }
+
+  /* analytics */
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+  .kpi { background: rgba(194,194,194,0.05); border: 0.5px solid rgba(194,194,194,0.12); border-radius: 12px; padding: 18px; }
+  .kpi .big { font-family: var(--fraunces); font-size: 34px; font-weight: 300; line-height: 1; }
+  .kpi.accent .big { color: var(--green); }
+  .kpi .lbl { font-size: 11px; color: var(--silver-dark); margin-top: 8px; letter-spacing: 0.03em; }
+  .funnel-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .funnel-name { width: 90px; font-size: 12px; color: var(--silver); flex-shrink: 0; }
+  .funnel-track { flex: 1; background: rgba(194,194,194,0.06); border-radius: 6px; height: 30px; overflow: hidden; }
+  .funnel-fill { height: 100%; border-radius: 6px; display: flex; align-items: center; padding-left: 10px; font-size: 11px; color: #0D0D0D; font-weight: 500; min-width: 34px; transition: width 0.4s; }
+  .funnel-pct { width: 46px; text-align: right; font-size: 11px; color: var(--silver-dark); flex-shrink: 0; }
+  .bars { display: flex; flex-direction: column; gap: 8px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+  .bar-name { width: 84px; flex-shrink: 0; color: var(--silver); text-transform: capitalize; }
+  .bar-track { flex: 1; background: rgba(194,194,194,0.06); border-radius: 5px; height: 18px; overflow: hidden; }
+  .bar-fill { height: 100%; background: rgba(194,194,194,0.4); border-radius: 5px; }
+  .bar-val { width: 34px; text-align: right; color: var(--silver-dark); flex-shrink: 0; }
+  .trend { display: flex; align-items: flex-end; gap: 3px; height: 120px; margin-top: 6px; }
+  .trend-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; min-width: 0; }
+  .trend-lead { background: rgba(194,194,194,0.3); border-radius: 2px 2px 0 0; min-height: 2px; }
+  .trend-conv { background: var(--green); border-radius: 2px 2px 0 0; }
+
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50; display: none; align-items: flex-start; justify-content: center; padding: 6vh 20px; overflow-y: auto; }
+  .modal-bg.open { display: flex; }
+  .modal { background: #161616; border: 0.5px solid rgba(194,194,194,0.2); border-radius: 14px; padding: 24px; width: 100%; max-width: 620px; }
+  .modal h3 { font-family: var(--fraunces); font-weight: 400; font-size: 18px; margin-bottom: 4px; }
+  .toast { position: fixed; bottom: 24px; right: 24px; z-index: 100; background: #1d1d1d; border: 0.5px solid rgba(76,175,110,0.4); color: var(--silver-light); border-radius: 10px; padding: 12px 18px; font-size: 12px; display: none; }
+  .empty { text-align: center; padding: 36px 20px; color: var(--silver-dark); font-size: 13px; }
+  .view { display: none; } .view.active { display: block; }
+
+  /* auth gate */
+  #gate { position: fixed; inset: 0; z-index: 200; background: var(--ink); display: none; align-items: center; justify-content: center; padding: 24px; }
+  #gate.show { display: flex; }
+  .auth-card { width: 100%; max-width: 380px; background: rgba(194,194,194,0.05); border: 0.5px solid rgba(194,194,194,0.15); border-radius: 16px; padding: 30px; }
+  .auth-card h1 { font-family: var(--fraunces); font-weight: 400; font-size: 24px; letter-spacing: -0.5px; }
+  .auth-card h1 span { color: var(--silver-dark); font-style: italic; }
+  .auth-sub { font-size: 12px; color: var(--silver-dark); margin: 6px 0 16px; line-height: 1.5; }
+  .auth-err { color: var(--red); font-size: 12px; margin-top: 10px; display: none; }
+
+  @media (max-width: 720px) {
+    .topbar { flex-wrap: wrap; padding: 10px 14px; gap: 8px; padding-top: max(10px, env(safe-area-inset-top)); }
+    .logo { font-size: 16px; }
+    .topbar-right { width: 100%; justify-content: flex-start; gap: 6px; }
+    .user-chip, .topbar .badge.live { display: none; }
+    select.client-pick { flex: 1; min-width: 0; }
+    .sidebar { position: fixed; bottom: 0; left: 0; right: 0; top: auto; width: 100%; flex-direction: row; justify-content: space-around; padding: 8px 6px calc(8px + env(safe-area-inset-bottom)); border-right: none; border-top: 0.5px solid rgba(194,194,194,0.15); background: rgba(13,13,13,0.95); backdrop-filter: blur(12px); z-index: 15; gap: 2px; }
+    .nav-label { display: none; }
+    .nav-item { flex-direction: column; gap: 3px; font-size: 10px; padding: 6px 4px; text-align: center; flex: 1; position: relative; }
+    .nav-item span.emoji { font-size: 19px; }
+    .nav-count { position: absolute; margin: 0; top: 0; left: 50%; transform: translateX(6px); }
+    .content { padding: 20px 16px calc(96px + env(safe-area-inset-bottom)); }
+    .page-title { font-size: 22px; }
+    .stat-grid, .kpi-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .stat-card, .kpi { padding: 14px; }
+    .kpi .big { font-size: 28px; }
+    .activity-section { grid-template-columns: 1fr; }
+    .grid2 { grid-template-columns: 1fr; }
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .table-scroll table { min-width: 520px; }
+    .workflow-card { flex-wrap: wrap; }
+    .modal { padding: 20px 16px; }
+    .btn { padding: 9px 14px; }
+  }
+  ::-webkit-scrollbar { width: 4px; height: 4px; } ::-webkit-scrollbar-thumb { background: rgba(194,194,194,0.15); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- AUTH GATE -->
+<div id="gate">
+  <div class="auth-card">
+    <h1>Laxorq <span>Automate</span></h1>
+    <div class="auth-sub" id="auth-sub">Sign in to your dashboard.</div>
+    <div id="auth-name-wrap" style="display:none"><label class="fld">Your name</label><input id="auth-name"></div>
+    <label class="fld">Email</label><input id="auth-email" type="email" autocomplete="username">
+    <label class="fld">Password</label><input id="auth-pass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doAuth()">
+    <button class="btn primary" style="width:100%;justify-content:center;margin-top:18px" id="auth-btn" onclick="doAuth()">Sign in</button>
+    <div class="auth-err" id="auth-err"></div>
+  </div>
+</div>
+
+<div class="app" id="app-shell" style="display:none">
+  <div class="topbar">
+    <div class="logo">Laxorq <span>Automate</span></div>
+    <div class="topbar-right">
+      <div class="badge live"><span class="live-dot"></span> live</div>
+      <button class="btn sm" id="install-btn" style="display:none" onclick="doInstall()">⤓ Install app</button>
+      <select class="client-pick" id="client-pick" onchange="switchClient(this.value)" style="display:none"></select>
+      <div class="user-chip"><span id="chip-email"></span><span class="user-role" id="chip-role"></span></div>
+      <button class="btn sm" onclick="logout()">Sign out</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="content">
+
+      <!-- DASHBOARD (owner) -->
+      <div class="view" id="view-dashboard">
+        <div class="page-header">
+          <div class="page-title">Your automations, <em>always on.</em></div>
+          <div class="page-subtitle"><span class="live-dot"></span> Real data, refreshed every 15 seconds</div>
+        </div>
+        <div class="stat-grid" id="stat-grid"></div>
+        <div class="section-header"><div class="section-title">Workflows</div></div>
+        <div class="workflow-grid" id="wf-grid"></div>
+        <div class="activity-section">
+          <div class="activity-feed">
+            <div class="section-header" style="margin-bottom:10px"><div class="section-title">Live activity</div><div class="badge live"><span class="live-dot"></span> Real-time</div></div>
+            <div id="feed"></div>
+          </div>
+          <div class="right-panel">
+            <div class="panel-card"><div class="panel-title">Leads this week</div><div class="mini-chart" id="mini-chart"></div><div class="chart-labels" id="chart-labels"></div></div>
+            <div class="panel-card"><div class="panel-title">Quick actions</div><div style="display:flex;flex-direction:column;gap:8px">
+              <button class="btn" onclick="openAddLead()">＋ Add lead manually</button>
+              <button class="btn" onclick="show('queue')">📨 Open follow-up queue</button>
+              <button class="btn" onclick="show('clients')">🔗 Get my lead form link</button>
+            </div></div>
+            <div class="panel-card" id="readiness"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ANALYTICS (owner + client) -->
+      <div class="view" id="view-analytics">
+        <div class="page-header">
+          <div class="page-title" id="an-title">Results</div>
+          <div class="page-subtitle" id="an-sub">Leads captured and turned into customers</div>
+        </div>
+        <div class="kpi-grid" id="kpi-grid"></div>
+        <div class="grid2" style="gap:14px">
+          <div class="card"><div class="section-title" style="margin-bottom:14px">Conversion funnel</div><div id="funnel"></div></div>
+          <div class="card"><div class="section-title" style="margin-bottom:14px">Where leads come from</div><div class="bars" id="by-source"></div>
+            <div class="section-title" style="margin:18px 0 12px;font-size:13px">Lead quality</div><div class="bars" id="by-score"></div></div>
+        </div>
+        <div class="card">
+          <div class="section-header"><div class="section-title">Last 30 days</div>
+            <div class="muted"><span style="color:var(--silver)">▮</span> Leads &nbsp; <span style="color:var(--green)">▮</span> Conversions</div></div>
+          <div class="trend" id="trend"></div>
+        </div>
+      </div>
+
+      <!-- LEADS -->
+      <div class="view" id="view-leads">
+        <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap">
+          <div><div class="page-title">Leads</div><div class="page-subtitle">Every enquiry, qualified the moment it arrives</div></div>
+          <button class="btn primary" onclick="openAddLead()">＋ Add lead</button>
+        </div>
+        <div class="card" style="padding:6px 10px">
+          <div class="table-scroll"><table><thead><tr><th>Lead</th><th>Contact</th><th>Score</th><th>Status</th><th>Captured</th></tr></thead><tbody id="leads-body"></tbody></table></div>
+          <div class="empty" id="leads-empty" style="display:none">No leads yet. Share your lead form link or add one manually.</div>
+        </div>
+      </div>
+
+      <!-- FOLLOW-UPS -->
+      <div class="view" id="view-queue">
+        <div class="page-header"><div class="page-title">Follow-up queue</div><div class="page-subtitle">Drafted and ready. WhatsApp opens with the message pre-filled, you just hit send.</div></div>
+        <div id="queue-list"></div>
+        <div class="empty" id="queue-empty" style="display:none">Queue is clear. New follow-ups appear here automatically when they come due.</div>
+      </div>
+
+      <!-- CLIENTS (owner) -->
+      <div class="view" id="view-clients">
+        <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap">
+          <div><div class="page-title">Client businesses</div><div class="page-subtitle">One workspace per business. Give each a login so they can watch their own results.</div></div>
+          <button class="btn primary" onclick="openAddClient()">＋ Add client</button>
+        </div>
+        <div id="clients-list"></div>
+      </div>
+
+      <!-- SETTINGS (owner) -->
+      <div class="view" id="view-settings">
+        <div class="page-header"><div class="page-title">Settings</div><div class="page-subtitle">Connect sending and AI. Both optional, the system degrades gracefully without them.</div></div>
+        <div class="card">
+          <div class="section-title" style="margin-bottom:4px">Email sending (SMTP)</div>
+          <div class="muted">With this set, instant replies and Touch 2 emails send automatically. Gmail: smtp.gmail.com, port 465, and an App Password.</div>
+          <div class="grid2">
+            <div><label class="fld">SMTP host</label><input id="s-host" placeholder="smtp.gmail.com"></div>
+            <div><label class="fld">Port</label><input id="s-port" placeholder="465"></div>
+            <div><label class="fld">Username (email)</label><input id="s-user" placeholder="you@gmail.com"></div>
+            <div><label class="fld">Password / app password</label><input id="s-pass" type="password"></div>
+          </div>
+          <label class="fld">From address (optional)</label><input id="s-from" placeholder="Acme Tuition <you@gmail.com>">
+          <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
+            <button class="btn primary" onclick="saveSettings()">Save</button>
+            <input id="s-test-to" placeholder="send a test to..." style="max-width:220px">
+            <button class="btn" onclick="testEmail()">Send test email</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="section-title" style="margin-bottom:4px">AI qualification (Claude API)</div>
+          <div class="muted">With a key, every lead is scored by Claude and the instant reply is personalised. Without it, a rules-based scorer runs.</div>
+          <label class="fld">Anthropic API key</label><input id="s-ai" type="password" placeholder="sk-ant-...">
+          <div style="margin-top:14px"><button class="btn primary" onclick="saveSettings()">Save</button></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-lead" onclick="if(event.target===this)closeModal('modal-lead')"><div class="modal" id="modal-lead-body"></div></div>
+<div class="modal-bg" id="modal-add" onclick="if(event.target===this)closeModal('modal-add')"><div class="modal">
+  <h3>Add a lead manually</h3><div class="muted">For enquiries from a phone call, walk-in or DM. Same instant reply + follow-up sequence applies.</div>
+  <div class="grid2"><div><label class="fld">Name</label><input id="al-name"></div><div><label class="fld">Phone (WhatsApp)</label><input id="al-phone" placeholder="9123 4567"></div></div>
+  <label class="fld">Email</label><input id="al-email"><label class="fld">Their enquiry / message</label><textarea id="al-msg"></textarea>
+  <div style="display:flex;gap:10px;margin-top:16px"><button class="btn primary" onclick="submitAddLead()">Add lead</button><button class="btn" onclick="closeModal('modal-add')">Cancel</button></div>
+</div></div>
+<div class="modal-bg" id="modal-client" onclick="if(event.target===this)closeModal('modal-client')"><div class="modal">
+  <h3>Add a client business</h3>
+  <div class="grid2"><div><label class="fld">Business name</label><input id="ac-name" placeholder="Acme Tuition Centre"></div><div><label class="fld">Niche</label><input id="ac-niche" placeholder="Tuition centre"></div>
+  <div><label class="fld">Owner name</label><input id="ac-owner"></div><div><label class="fld">Owner email</label><input id="ac-email"></div></div>
+  <div style="display:flex;gap:10px;margin-top:16px"><button class="btn primary" onclick="submitAddClient()">Create workspace</button><button class="btn" onclick="closeModal('modal-client')">Cancel</button></div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+let ME = null;                 // logged-in user
+let CID = Number(localStorage.getItem('laxorq_cid')) || 0;
+let CLIENTS = [];
+let CURRENT_VIEW = 'dashboard';
+let AUTH_MODE = 'login';       // login | setup
+let deferredInstall = null;
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const api = async (path, opts = {}) => {
+  const r = await fetch(path, { headers: { 'content-type': 'application/json' }, credentials: 'same-origin', ...opts });
+  const d = await r.json().catch(() => ({}));
+  if (r.status === 401) { boot(); throw new Error('not logged in'); }
+  if (!r.ok) throw new Error(d.error || r.statusText);
+  return d;
+};
+function toast(msg, ok = true) {
+  const t = $('toast'); t.textContent = msg;
+  t.style.borderColor = ok ? 'rgba(76,175,110,0.4)' : 'rgba(229,115,115,0.5)';
+  t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500);
+}
+function closeModal(id) { $(id).classList.remove('open'); }
+function ago(iso) {
+  if (!iso) return '';
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (s < 60) return 'just now'; if (s < 3600) return Math.floor(s/60) + ' min ago';
+  if (s < 86400) return Math.floor(s/3600) + ' hr ago'; return Math.floor(s/86400) + ' d ago';
+}
+const money = (n) => n ? '$' + Number(n).toLocaleString('en-SG') : '$0';
+function waLink(d, text) { return 'https://wa.me/' + d + '?text=' + encodeURIComponent(text); }
+function mailtoLink(email, subject, body) { return 'mailto:' + email + '?subject=' + encodeURIComponent(subject||'') + '&body=' + encodeURIComponent(body||''); }
+
+// ---------- auth ----------
+async function boot() {
+  const st = await (await fetch('/api/auth/state', { credentials: 'same-origin' })).json();
+  if (st.user) { ME = st.user; return startApp(); }
+  AUTH_MODE = st.setup_needed ? 'setup' : 'login';
+  $('app-shell').style.display = 'none';
+  $('gate').classList.add('show');
+  if (AUTH_MODE === 'setup') {
+    $('auth-sub').textContent = 'Welcome. Create your owner account to get started — this is your master login.';
+    $('auth-name-wrap').style.display = 'block';
+    $('auth-btn').textContent = 'Create account';
+    $('auth-pass').autocomplete = 'new-password';
+  } else {
+    $('auth-sub').textContent = 'Sign in to your dashboard.';
+    $('auth-name-wrap').style.display = 'none';
+    $('auth-btn').textContent = 'Sign in';
+  }
+}
+async function doAuth() {
+  $('auth-err').style.display = 'none';
+  const email = $('auth-email').value.trim(), password = $('auth-pass').value;
+  if (!email || !password) { showAuthErr('Enter your email and password.'); return; }
+  try {
+    const path = AUTH_MODE === 'setup' ? '/api/auth/setup' : '/api/auth/login';
+    const body = AUTH_MODE === 'setup' ? { email, password, name: $('auth-name').value.trim() } : { email, password };
+    const r = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Failed');
+    ME = d.user; $('gate').classList.remove('show'); $('auth-pass').value = ''; startApp();
+  } catch (e) { showAuthErr(e.message); }
+}
+function showAuthErr(m) { const el = $('auth-err'); el.textContent = m; el.style.display = 'block'; }
+async function logout() {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  ME = null; location.reload();
+}
+
+// ---------- nav / shell ----------
+const NAV = {
+  owner: [['dashboard','📊','Dashboard'], ['analytics','📈','Analytics'], ['leads','👤','Leads'], ['queue','📨','Follow-ups','due'], ['clients','🏢','Clients'], ['settings','⚙️','Settings']],
+  client: [['analytics','📈','Results'], ['leads','👤','My leads'], ['queue','📨','Follow-ups','due']],
+};
+function buildNav() {
+  const items = NAV[ME.role];
+  $('sidebar').innerHTML = items.map(([v, icon, label, badge]) =>
+    `<div class="nav-item" data-view="${v}" onclick="show('${v}')"><span class="emoji">${icon}</span> ${label}${badge?`<span class="nav-count" id="due-count" style="display:none">0</span>`:''}</div>`).join('');
+}
+function startApp() {
+  $('gate').classList.remove('show');
+  $('app-shell').style.display = 'flex';
+  $('chip-email').textContent = ME.role === 'client' ? (ME.client_name || ME.email) : ME.email;
+  $('chip-role').textContent = ME.role;
+  buildNav();
+  if (ME.role === 'client') { $('client-pick').style.display = 'none'; CID = ME.client_id; }
+  loadClients().then(() => { show(ME.role === 'owner' ? 'dashboard' : 'analytics'); });
+  if (!window._pollStarted) { window._pollStarted = true; setInterval(() => { if (!document.querySelector('.modal-bg.open')) refresh(); }, 15000); }
+}
+function show(view) {
+  CURRENT_VIEW = view;
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === view));
+  const el = $('view-' + view); if (el) el.classList.add('active');
+  refresh();
+}
+async function switchClient(id) { CID = Number(id); localStorage.setItem('laxorq_cid', CID); refresh(); }
+
+// ---------- dashboard (owner) ----------
+async function renderDashboard() {
+  const d = await api('/api/overview?client_id=' + CID);
+  const s = d.stats;
+  $('stat-grid').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Leads captured</div><div class="stat-value">${s.leads_total}</div><div class="stat-delta ${s.leads_week?'up':''}">${s.leads_week ? '&uarr; ' + s.leads_week + ' this week' : 'share your form to start'}</div></div>
+    <div class="stat-card"><div class="stat-label">Responded in &lt;1 min</div><div class="stat-value">${s.fast_reply_pct === null ? '—' : s.fast_reply_pct + '<span style="font-size:16px;color:var(--silver-dark)">%</span>'}</div><div class="stat-delta">of auto-sent instant replies</div></div>
+    <div class="stat-card"><div class="stat-label">Follow-ups sent</div><div class="stat-value">${s.followups_sent}</div><div class="stat-delta">across the 3-touch sequence</div></div>
+    <div class="stat-card"><div class="stat-label">Re-engaged / booked</div><div class="stat-value">${s.re_engaged}</div><div class="stat-delta ${s.after_hours?'up':''}">${s.after_hours} after-hours leads caught</div></div>`;
+  const WF = {
+    instant_reply: { icon: '👤', cls: 'lead', name: 'Lead capture → instant reply', desc: 'Form / manual lead → AI qualification → instant first reply (auto email, or one-tap WhatsApp)' },
+    followup: { icon: '📨', cls: 'followup', name: 'No-reply follow-up sequence', desc: 'WhatsApp Day 1 → Email Day 3 → Call prompt Day 7. Cancelled instantly when the lead replies' },
+    notify_owner: { icon: '🔔', cls: 'notify', name: 'Hot lead owner alert', desc: 'Email the business owner the moment a hot lead lands (needs SMTP + owner email)' },
+  };
+  $('wf-grid').innerHTML = d.workflows.map(w => { const m = WF[w.key]; if (!m) return '';
+    return `<div class="workflow-card"><div class="wf-icon ${m.cls}">${m.icon}</div><div class="wf-info"><div class="wf-name">${m.name}</div><div class="wf-desc">${m.desc}</div></div>
+      <div class="badge ${w.enabled?'live':'paused'}">${w.enabled?'<span class="live-dot"></span> Live':'Paused'}</div>
+      <div class="wf-toggle ${w.enabled?'':'off'}" onclick="toggleWf('${w.key}', ${w.enabled?0:1})"></div></div>`; }).join('');
+  $('feed').innerHTML = d.feed.length ? d.feed.map(e => `<div class="activity-item"><div class="act-icon ${esc(e.type)}">${{lead:'👤',msg:'💬',followup:'📨',system:'⚙️'}[e.type]||'•'}</div><div><div class="act-title">${e.text}</div><div class="act-time">${ago(e.created_at)}</div></div></div>`).join('') : '<div class="empty">Activity appears here as leads come in.</div>';
+  const max = Math.max(1, ...d.chart.map(c => c.count));
+  $('mini-chart').innerHTML = d.chart.map((c, i) => `<div class="mini-bar ${i===6?'today':''}" style="height:${Math.max(7, 100*c.count/max)}%" title="${c.count}"></div>`).join('');
+  $('chart-labels').innerHTML = d.chart.map((c,i) => `<span ${i===6?'style="color:var(--silver)"':''}>${esc(c.label)}</span>`).join('');
+  $('readiness').innerHTML = `<div class="panel-title">System status</div><div style="display:flex;flex-direction:column;gap:8px;font-size:12px">
+    <div>${d.smtp_ready ? '🟢 Email auto-send on' : '⚪ Email auto-send off <span class="muted">(Settings)</span>'}</div>
+    <div>${d.ai_ready ? '🟢 Claude AI qualification on' : '⚪ Rules-based scoring <span class="muted">(add API key)</span>'}</div></div>`;
+  setDue(d.dueCount);
+}
+function setDue(n) { const dc = $('due-count'); if (dc) { dc.style.display = n ? '' : 'none'; dc.textContent = n; } }
+async function toggleWf(key, enabled) { await api('/api/workflows/toggle', { method: 'POST', body: JSON.stringify({ client_id: CID, key, enabled }) }); renderDashboard(); }
+
+// ---------- analytics (owner + client) ----------
+async function renderAnalytics() {
+  const a = await api('/api/analytics?client_id=' + CID);
+  $('an-title').textContent = ME.role === 'client' ? 'Your results' : 'Results';
+  const resp = a.avg_response_sec == null ? '—' : a.avg_response_sec < 60 ? a.avg_response_sec + 's' : Math.round(a.avg_response_sec/60) + 'm';
+  $('kpi-grid').innerHTML = `
+    <div class="kpi accent"><div class="big">${a.funnel.captured}</div><div class="lbl">Leads captured</div></div>
+    <div class="kpi accent"><div class="big">${a.conversion_rate}%</div><div class="lbl">Conversion rate (${a.funnel.booked} booked)</div></div>
+    <div class="kpi"><div class="big">${a.reply_rate}%</div><div class="lbl">Reply rate</div></div>
+    <div class="kpi"><div class="big">${resp}</div><div class="lbl">Avg first response</div></div>`;
+  const cap = Math.max(1, a.funnel.captured);
+  const stages = [['Captured', a.funnel.captured, 'rgba(194,194,194,0.55)'], ['Contacted', a.funnel.contacted, 'var(--blue)'], ['Replied', a.funnel.responded, 'var(--amber)'], ['Booked', a.funnel.booked, 'var(--green)']];
+  $('funnel').innerHTML = stages.map(([name, val, col]) => {
+    const pct = Math.round(100 * val / cap);
+    return `<div class="funnel-row"><div class="funnel-name">${name}</div><div class="funnel-track"><div class="funnel-fill" style="width:${Math.max(6,pct)}%;background:${col}">${val}</div></div><div class="funnel-pct">${pct}%</div></div>`;
+  }).join('') + (a.revenue ? `<div style="margin-top:14px;font-size:13px">Revenue from booked leads: <strong style="color:var(--green)">${money(a.revenue)}</strong></div>` : '');
+  const barList = (rows) => { const mx = Math.max(1, ...rows.map(r => r.count)); return rows.map(r => `<div class="bar-row"><div class="bar-name">${esc(r.label)}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.max(3,100*r.count/mx)}%"></div></div><div class="bar-val">${r.count}</div></div>`).join('') || '<div class="muted">No data yet.</div>'; };
+  $('by-source').innerHTML = barList(a.by_source);
+  $('by-score').innerHTML = barList(a.by_score.filter(r => r.count > 0).length ? a.by_score : []);
+  if (!$('by-score').innerHTML) $('by-score').innerHTML = '<div class="muted">No data yet.</div>';
+  const mx = Math.max(1, ...a.trend.map(t => t.leads));
+  $('trend').innerHTML = a.trend.map(t => {
+    const lh = Math.round(96 * (t.leads - t.conversions) / mx), ch = Math.round(96 * t.conversions / mx);
+    return `<div class="trend-col" title="${t.label}: ${t.leads} leads, ${t.conversions} booked">${ch?`<div class="trend-conv" style="height:${Math.max(2,ch)}px"></div>`:''}${(t.leads-t.conversions)?`<div class="trend-lead" style="height:${Math.max(2,lh)}px"></div>`:''}</div>`;
+  }).join('');
+  setDue(0); refreshDue();
+}
+
+// ---------- leads ----------
+async function renderLeads() {
+  const leads = await api('/api/leads?client_id=' + CID);
+  $('leads-empty').style.display = leads.length ? 'none' : '';
+  $('leads-body').innerHTML = leads.map(l => `
+    <tr class="rowlink" onclick="openLead(${l.id})">
+      <td><strong>${esc(l.name) || '(no name)'}</strong><div class="muted">${esc((l.message||'').slice(0,70))}${(l.message||'').length>70?'...':''}</div></td>
+      <td>${l.phone ? '📱 ' + esc(l.phone) + '<br>' : ''}${l.email ? '✉️ ' + esc(l.email) : ''}</td>
+      <td>${l.score ? `<span class="badge ${esc(l.score)}">${esc(l.score)}</span>` : '<span class="muted">scoring...</span>'}</td>
+      <td><span class="badge ${(l.status==='replied'||l.status==='booked')?'green':'gray'}">${esc(l.status)}</span>${l.value?`<div class="muted">${money(l.value)}</div>`:''}</td>
+      <td class="muted">${ago(l.created_at)}<br>${esc(l.source)}</td></tr>`).join('');
+  refreshDue();
+}
+async function openLead(id) {
+  const { lead: l, touches, wa } = await api('/api/leads/' + id);
+  const TICON = { whatsapp: '💬', email: '✉️', call: '📞' };
+  const rows = touches.map(t => `<tr><td style="white-space:nowrap">${TICON[t.channel]||''} ${t.touch_no===0?'Instant reply':'Touch '+t.touch_no}</td>
+    <td><span class="badge ${t.status==='sent'?'green':t.status==='due'?'warm':'gray'}">${esc(t.status)}</span></td>
+    <td class="muted">${t.status==='sent' ? 'sent ' + ago(t.sent_at) : (t.status==='scheduled' ? 'due ' + new Date(t.due_at).toLocaleString('en-SG',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '')}</td></tr>`).join('');
+  $('modal-lead-body').innerHTML = `
+    <h3>${esc(l.name) || 'Lead #' + l.id}</h3>
+    <div class="muted">${esc(l.phone)} ${l.phone && l.email ? '·' : ''} ${esc(l.email)} · captured ${ago(l.created_at)} via ${esc(l.source)}</div>
+    ${l.score ? `<div style="margin-top:10px"><span class="badge ${esc(l.score)}">${esc(l.score)}</span> <span class="muted">${esc(l.score_reason)}</span></div>` : ''}
+    <label class="fld">Their message</label><div class="card" style="margin:0;font-size:12px;line-height:1.6">${esc(l.message) || '<span class="muted">(empty)</span>'}</div>
+    <label class="fld">Sequence</label><table>${rows}</table>
+    <div style="display:flex;gap:8px;margin-top:18px;flex-wrap:wrap">
+      ${wa ? `<a class="btn wa" target="_blank" href="${waLink(wa, 'Hi ' + esc((l.name||'').split(' ')[0]))}">💬 WhatsApp them</a>` : ''}
+      ${l.email ? `<a class="btn" href="${mailtoLink(l.email, '', '')}">✉️ Email them</a>` : ''}
+      ${l.status==='new' ? `<button class="btn" onclick="setLeadStatus(${l.id},'replied')">They replied ✓</button>
+        <button class="btn primary" onclick="bookLead(${l.id})">Booked 🎉</button>
+        <button class="btn danger" onclick="setLeadStatus(${l.id},'dead')">Mark dead</button>` :
+        `<span class="badge ${(l.status==='replied'||l.status==='booked')?'green':'gray'}">${esc(l.status)}${l.value?' · '+money(l.value):''}</span>
+        ${l.status!=='booked'?`<button class="btn primary" onclick="bookLead(${l.id})">Mark booked 🎉</button>`:''}
+        <button class="btn" onclick="setLeadStatus(${l.id},'new')">Re-open</button>`}
+    </div>`;
+  $('modal-lead').classList.add('open');
+}
+async function bookLead(id) {
+  const v = prompt('Deal value for this booking? (optional, numbers only — leave blank to skip)', '');
+  if (v === null) return;
+  await api('/api/leads/' + id, { method: 'PATCH', body: JSON.stringify({ status: 'booked', value: Number(v.replace(/[^\d.]/g,'')) || 0 }) });
+  closeModal('modal-lead'); toast('Booked! Conversion recorded'); refresh();
+}
+async function setLeadStatus(id, status) {
+  await api('/api/leads/' + id, { method: 'PATCH', body: JSON.stringify({ status }) });
+  closeModal('modal-lead');
+  toast(status === 'replied' ? 'Marked replied — pending follow-ups cancelled' : status === 'dead' ? 'Marked dead' : 'Updated'); refresh();
+}
+function openAddLead() { $('modal-add').classList.add('open'); }
+async function submitAddLead() {
+  const body = { client_id: CID, name: $('al-name').value.trim(), phone: $('al-phone').value.trim(), email: $('al-email').value.trim(), message: $('al-msg').value.trim(), source: 'manual' };
+  if (!body.name && !body.phone && !body.email) return toast('Need at least a name, phone or email', false);
+  await api('/api/leads', { method: 'POST', body: JSON.stringify(body) });
+  ['al-name','al-phone','al-email','al-msg'].forEach(i => $(i).value = '');
+  closeModal('modal-add'); toast('Lead added — qualifying and drafting the reply now'); setTimeout(refresh, 800);
+}
+
+// ---------- follow-up queue ----------
+async function renderQueue() {
+  const rows = await api('/api/queue?client_id=' + CID);
+  $('queue-empty').style.display = rows.length ? 'none' : '';
+  const TMETA = { whatsapp: { icon: '💬', label: 'WhatsApp' }, email: { icon: '✉️', label: 'Email' }, call: { icon: '📞', label: 'Call' } };
+  $('queue-list').innerHTML = rows.map(t => {
+    const m = TMETA[t.channel]; const overdue = new Date(t.due_at) < Date.now(); let actions = '';
+    if (t.channel === 'whatsapp' && t.wa) actions = `<a class="btn wa" target="_blank" href="${waLink(t.wa, t.body)}">💬 Open WhatsApp (pre-filled)</a><button class="btn" onclick="touchAction(${t.id},'sent')">Mark sent ✓</button>`;
+    else if (t.channel === 'email' && t.lead_email) actions = `<button class="btn primary" onclick="touchAction(${t.id},'send_now')">Send email now</button><a class="btn" href="${mailtoLink(t.lead_email, t.subject, t.body)}">Open in mail app</a><button class="btn" onclick="touchAction(${t.id},'sent')">Mark sent ✓</button>`;
+    else if (t.channel === 'call') actions = `${t.lead_phone ? `<a class="btn" href="tel:${esc(t.lead_phone)}">📞 Call ${esc(t.lead_phone)}</a>` : ''}<button class="btn" onclick="touchAction(${t.id},'sent')">Done ✓</button>`;
+    else actions = `<button class="btn" onclick="touchAction(${t.id},'sent')">Mark sent ✓</button>`;
+    return `<div class="card"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">
+      <strong style="font-size:13px">${m.icon} ${t.touch_no===0?'Instant reply':'Touch '+t.touch_no} · ${m.label} → ${esc(t.lead_name)||'lead'}</strong>
+      ${t.lead_score?`<span class="badge ${esc(t.lead_score)}">${esc(t.lead_score)}</span>`:''}
+      <span class="muted" style="margin-left:auto;${overdue?'color:var(--amber)':''}">${overdue?'due now':'due '+ago(t.due_at).replace(' ago','')}</span></div>
+      <textarea id="tb-${t.id}" onchange="saveTouchBody(${t.id})">${esc(t.body)}</textarea>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">${actions}<button class="btn sm" style="margin-left:auto;color:var(--silver-dark)" onclick="touchAction(${t.id},'skip')">Skip</button></div></div>`;
+  }).join('');
+  refreshDue();
+}
+async function saveTouchBody(id) { await api('/api/touches/' + id, { method: 'PATCH', body: JSON.stringify({ body: $('tb-' + id).value }) }); toast('Draft saved'); }
+async function touchAction(id, action) {
+  try { await api('/api/touches/' + id, { method: 'PATCH', body: JSON.stringify({ action }) }); toast(action === 'send_now' ? 'Email sent ✓' : action === 'sent' ? 'Marked sent' : 'Skipped'); }
+  catch (e) { toast(e.message, false); } refresh();
+}
+
+// ---------- clients (owner) ----------
+async function renderClients() {
+  const base = location.origin;
+  const users = await api('/api/users');
+  $('clients-list').innerHTML = CLIENTS.map(c => {
+    const formUrl = `${base}/form?t=${c.form_token}`;
+    const embed = `<iframe src="${formUrl}" style="width:100%;max-width:480px;height:540px;border:none;border-radius:12px"></iframe>`;
+    const logins = users.filter(u => u.client_id === c.id);
+    return `<div class="card">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><strong style="font-size:14px">${esc(c.name)}</strong><span class="muted">${esc(c.niche)}</span>
+        ${c.id===CID?'<span class="badge live">selected</span>':`<button class="btn sm" style="margin-left:auto" onclick="switchClient(${c.id});renderClients()">View this one</button>`}</div>
+      <div class="grid2" style="margin-top:6px">
+        <div><label class="fld">Lead form link (share or QR this)</label><div style="display:flex;gap:6px"><span class="mono" style="flex:1;padding:8px">${formUrl}</span><button class="btn sm" onclick="navigator.clipboard.writeText('${formUrl}');toast('Link copied')">Copy</button></div></div>
+        <div><label class="fld">Embed on their website</label><div style="display:flex;gap:6px"><span class="mono" style="flex:1;padding:8px">&lt;iframe src=&quot;${formUrl}&quot; ...&gt;</span><button class="btn sm" onclick='navigator.clipboard.writeText(${JSON.stringify(embed)});toast("Embed code copied")'>Copy</button></div></div>
+      </div>
+      <div style="margin-top:14px"><label class="fld">Client logins — let this business watch their own results</label>
+        ${logins.map(u => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap"><span class="badge gray">👤 ${esc(u.email)}</span>
+          <button class="btn sm" onclick="resetClientPw(${u.id})">Reset password</button><button class="btn sm danger" onclick="deleteClientLogin(${u.id})">Remove</button></div>`).join('') || '<div class="muted" style="margin-bottom:6px">No client login yet.</div>'}
+        <button class="btn sm" onclick="addClientLogin(${c.id})">＋ Create a login for this client</button></div>
+      <details style="margin-top:12px"><summary style="font-size:11px;color:var(--silver-dark);cursor:pointer">Edit details &amp; message templates</summary>
+        <div class="grid2"><div><label class="fld">Business name</label><input id="cn-${c.id}" value="${esc(c.name)}"></div><div><label class="fld">Niche</label><input id="cnh-${c.id}" value="${esc(c.niche)}"></div>
+        <div><label class="fld">Owner name</label><input id="co-${c.id}" value="${esc(c.owner_name)}"></div><div><label class="fld">Owner email (hot-lead alerts)</label><input id="ce-${c.id}" value="${esc(c.owner_email)}"></div></div>
+        ${templateFields(c)}<div style="margin-top:14px"><button class="btn primary" onclick="saveClient(${c.id})">Save client</button></div></details>
+    </div>`;
+  }).join('');
+}
+function templateFields(c) {
+  let t = {}; try { t = JSON.parse(c.settings_json).templates || {}; } catch {}
+  const F = [['instant_reply','Instant reply (Touch 0)'],['touch1_whatsapp','Touch 1 — WhatsApp, day 1'],['touch2_email_subject','Touch 2 — email subject'],['touch2_email','Touch 2 — email body, day 3'],['touch3_call','Touch 3 — call note, day 7']];
+  return '<div class="muted" style="margin-top:12px">Placeholders: {{first_name}} {{name}} {{business}} {{phone}} {{snippet}}</div>' +
+    F.map(([k, label]) => `<label class="fld">${label}</label>${k==='touch2_email_subject'?`<input id="tpl-${k}-${c.id}" value="${esc(t[k]||'')}">`:`<textarea id="tpl-${k}-${c.id}">${esc(t[k]||'')}</textarea>`}`).join('');
+}
+async function saveClient(id) {
+  const templates = {};
+  for (const k of ['instant_reply','touch1_whatsapp','touch2_email_subject','touch2_email','touch3_call']) { const el = $(`tpl-${k}-${id}`); if (el) templates[k] = el.value; }
+  await api('/api/clients/' + id, { method: 'PATCH', body: JSON.stringify({ name: $('cn-'+id).value, niche: $('cnh-'+id).value, owner_name: $('co-'+id).value, owner_email: $('ce-'+id).value, templates }) });
+  toast('Client saved'); await loadClients(); renderClients();
+}
+async function addClientLogin(clientId) {
+  const email = prompt("Client's login email?"); if (!email) return;
+  const password = prompt('Set a password for them (6+ characters). Share it with them securely.'); if (!password) return;
+  try { await api('/api/users', { method: 'POST', body: JSON.stringify({ client_id: clientId, email: email.trim(), password }) }); toast('Client login created'); renderClients(); }
+  catch (e) { toast(e.message, false); }
+}
+async function resetClientPw(id) {
+  const password = prompt('New password (6+ characters)?'); if (!password) return;
+  try { await api('/api/users/' + id + '/password', { method: 'POST', body: JSON.stringify({ password }) }); toast('Password reset — they will need to sign in again'); }
+  catch (e) { toast(e.message, false); }
+}
+async function deleteClientLogin(id) {
+  if (!confirm('Remove this client login? They will lose access.')) return;
+  await api('/api/users/' + id, { method: 'DELETE' }); toast('Login removed'); renderClients();
+}
+function openAddClient() { $('modal-client').classList.add('open'); }
+async function submitAddClient() {
+  const name = $('ac-name').value.trim(); if (!name) return toast('Business name required', false);
+  const c = await api('/api/clients', { method: 'POST', body: JSON.stringify({ name, niche: $('ac-niche').value.trim(), owner_name: $('ac-owner').value.trim(), owner_email: $('ac-email').value.trim() }) });
+  ['ac-name','ac-niche','ac-owner','ac-email'].forEach(i => $(i).value = '');
+  closeModal('modal-client'); await loadClients(); switchClient(c.id); toast('Workspace created for ' + name); show('clients');
+}
+
+// ---------- settings (owner) ----------
+async function renderSettings() {
+  const s = await api('/api/settings');
+  $('s-host').value = s.smtp_host; $('s-port').value = s.smtp_port; $('s-user').value = s.smtp_user;
+  $('s-pass').value = s.smtp_pass; $('s-from').value = s.smtp_from; $('s-ai').value = s.anthropic_api_key;
+}
+async function saveSettings() {
+  await api('/api/settings', { method: 'POST', body: JSON.stringify({ smtp_host: $('s-host').value.trim(), smtp_port: $('s-port').value.trim(), smtp_user: $('s-user').value.trim(), smtp_pass: $('s-pass').value, smtp_from: $('s-from').value.trim(), anthropic_api_key: $('s-ai').value.trim() }) });
+  toast('Settings saved');
+}
+async function testEmail() {
+  const to = $('s-test-to').value.trim(); if (!to) return toast('Enter an address to send the test to', false);
+  try { await api('/api/test-email', { method: 'POST', body: JSON.stringify({ to }) }); toast('Test email sent ✓'); } catch (e) { toast('Failed: ' + e.message, false); }
+}
+
+// ---------- shared ----------
+async function loadClients() {
+  CLIENTS = await api('/api/clients');
+  if (!CLIENTS.find(c => c.id === CID)) CID = CLIENTS[0]?.id || 0;
+  if (ME.role === 'owner') {
+    const pick = $('client-pick'); pick.style.display = '';
+    pick.innerHTML = CLIENTS.map(c => `<option value="${c.id}" ${c.id===CID?'selected':''}>${esc(c.name)}</option>`).join('');
+  }
+}
+async function refreshDue() {
+  try { const d = await api('/api/overview?client_id=' + CID); setDue(d.dueCount); } catch {}
+}
+async function refresh() {
+  try {
+    if (CURRENT_VIEW === 'dashboard') await renderDashboard();
+    else if (CURRENT_VIEW === 'analytics') await renderAnalytics();
+    else if (CURRENT_VIEW === 'leads') await renderLeads();
+    else if (CURRENT_VIEW === 'queue') await renderQueue();
+    else if (CURRENT_VIEW === 'clients') await renderClients();
+    else if (CURRENT_VIEW === 'settings') await renderSettings();
+  } catch (e) { console.error(e); }
+}
+
+// ---------- PWA ----------
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; $('install-btn').style.display = ''; });
+async function doInstall() { if (!deferredInstall) return; deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; $('install-btn').style.display = 'none'; }
+
+boot();
+</script>
+</body>
+</html>

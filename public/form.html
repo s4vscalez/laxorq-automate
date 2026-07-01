@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enquiry</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,400;0,600;1,400&family=Outfit:wght@300;400;500;600&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Outfit', system-ui, sans-serif;
+    background: #0D0D0D; color: #E0E0E0;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .wrap { width: 100%; max-width: 440px; }
+  .card {
+    background: rgba(194,194,194,0.05); border: 0.5px solid rgba(194,194,194,0.15);
+    border-radius: 16px; padding: 28px;
+  }
+  h1 { font-family: 'Fraunces', Georgia, serif; font-weight: 400; font-size: 22px; letter-spacing: -0.5px; }
+  h1 em { font-style: italic; color: #888; }
+  .sub { font-size: 13px; color: #888; margin-top: 6px; line-height: 1.5; }
+  label { display: block; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #888; margin: 16px 0 6px; }
+  input, textarea {
+    width: 100%; background: rgba(194,194,194,0.07); border: 0.5px solid rgba(194,194,194,0.2);
+    border-radius: 10px; padding: 12px 14px; font-size: 14px; color: #E0E0E0;
+    font-family: 'Outfit', system-ui, sans-serif; outline: none;
+  }
+  input:focus, textarea:focus { border-color: rgba(194,194,194,0.45); }
+  textarea { resize: vertical; min-height: 90px; line-height: 1.5; }
+  button {
+    width: 100%; margin-top: 22px; padding: 13px; border-radius: 10px; border: 0.5px solid rgba(76,175,110,0.5);
+    background: rgba(76,175,110,0.18); color: #4CAF6E; font-size: 14px; font-weight: 500;
+    font-family: 'Outfit', system-ui, sans-serif; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { background: rgba(76,175,110,0.3); }
+  button:disabled { opacity: 0.5; cursor: wait; }
+  .done { text-align: center; padding: 30px 10px; display: none; }
+  .done .tick { font-size: 40px; }
+  .done h2 { font-family: 'Fraunces', Georgia, serif; font-weight: 400; margin: 14px 0 8px; }
+  .done p { font-size: 13px; color: #888; line-height: 1.6; }
+  .err { color: #E57373; font-size: 12px; margin-top: 12px; display: none; }
+  .powered { text-align: center; font-size: 10px; color: #555; margin-top: 16px; letter-spacing: 0.05em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div id="form-part">
+      <h1 id="biz">Get in <em>touch.</em></h1>
+      <div class="sub">Leave your details and you will hear back within minutes, not days.</div>
+      <form id="f" onsubmit="return submitLead(event)">
+        <label>Your name</label>
+        <input id="name" autocomplete="name">
+        <label>WhatsApp / phone</label>
+        <input id="phone" autocomplete="tel" inputmode="tel" placeholder="9123 4567">
+        <label>Email</label>
+        <input id="email" type="email" autocomplete="email">
+        <label>How can we help?</label>
+        <textarea id="message" placeholder="e.g. Looking for P6 Maths tuition for my son, weekday evenings if possible"></textarea>
+        <button id="go" type="submit">Send enquiry</button>
+        <div class="err" id="err"></div>
+      </form>
+    </div>
+    <div class="done" id="done">
+      <div class="tick">✓</div>
+      <h2>Got it, thank you!</h2>
+      <p id="done-msg">Your enquiry is in. Expect a reply very shortly.</p>
+    </div>
+  </div>
+  <div class="powered">POWERED BY LAXORQ AUTOMATE</div>
+</div>
+
+<script>
+'use strict';
+const token = new URLSearchParams(location.search).get('t') || '';
+const API = location.origin;
+
+fetch(API + '/api/public/forminfo?t=' + encodeURIComponent(token))
+  .then(r => r.ok ? r.json() : null)
+  .then(d => { if (d && d.business) document.getElementById('biz').innerHTML = 'Enquire with <em>' + d.business.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) + '.</em>'; })
+  .catch(() => {});
+
+async function submitLead(e) {
+  e.preventDefault();
+  const get = id => document.getElementById(id).value.trim();
+  const err = document.getElementById('err');
+  err.style.display = 'none';
+  const body = { token, name: get('name'), phone: get('phone'), email: get('email'), message: get('message'), source: 'form' };
+  if (!body.name && !body.phone && !body.email) {
+    err.textContent = 'Please leave at least your name and a way to reach you.';
+    err.style.display = 'block';
+    return false;
+  }
+  const btn = document.getElementById('go');
+  btn.disabled = true; btn.textContent = 'Sending...';
+  try {
+    const r = await fetch(API + '/api/public/lead', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Something went wrong');
+    document.getElementById('form-part').style.display = 'none';
+    document.getElementById('done').style.display = 'block';
+  } catch (ex) {
+    err.textContent = ex.message;
+    err.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Send enquiry';
+  }
+  return false;
+}
+</script>
+</body>
+</html>

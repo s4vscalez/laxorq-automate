@@ -1,0 +1,61 @@
+{
+  "name": "laxorq-automate",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Laxorq Automate — lead capture, AI qualification, instant replies, automatic 3-touch follow-ups and a client-facing conversion analytics dashboard. Owner sees every client; each client logs in to see only their own leads and results.",
+  "author": "Laxorq",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "node server.js",
+    "app": "electron .",
+    "dist": "electron-builder",
+    "publish": "electron-builder --publish always",
+    "icons": "node gen-icons.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "build": {
+    "appId": "sg.laxorq.automate",
+    "productName": "Laxorq Automate",
+    "files": [
+      "server.js",
+      "public/**/*",
+      "electron/main.js",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.business"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Office"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "s4vscalez",
+      "repo": "laxorq-automate"
+    }
+  },
+  "devDependencies": {
+    "electron": "^42.5.1",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}
