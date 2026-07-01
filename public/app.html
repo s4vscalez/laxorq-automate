@@ -445,7 +445,11 @@ function show(view) {
   const el = $('view-' + view); if (el) el.classList.add('active');
   refresh();
 }
-async function switchClient(id) { CID = Number(id); localStorage.setItem('laxorq_cid', CID); refresh(); }
+async function switchClient(id) {
+  if (id === '__add__') { $('client-pick').value = String(CID); openAddClient(); return; }
+  if (id === '__manage__') { $('client-pick').value = String(CID); show('clients'); return; }
+  CID = Number(id); localStorage.setItem('laxorq_cid', CID); refresh();
+}
 
 // ---------- dashboard (owner) ----------
 async function renderDashboard() {
@@ -670,7 +674,12 @@ async function loadClients() {
   if (!CLIENTS.find(c => c.id === CID)) CID = CLIENTS[0]?.id || 0;
   if (ME.role === 'owner') {
     const pick = $('client-pick'); pick.style.display = '';
-    pick.innerHTML = CLIENTS.map(c => `<option value="${c.id}" ${c.id===CID?'selected':''}>${esc(c.name)}</option>`).join('');
+    pick.innerHTML =
+      `<optgroup label="Switch client">` +
+      CLIENTS.map(c => `<option value="${c.id}" ${c.id===CID?'selected':''}>${esc(c.name)}</option>`).join('') +
+      `</optgroup>` +
+      `<optgroup label="Manage"><option value="__add__">＋ Add new client…</option><option value="__manage__">⚙ Manage clients &amp; logins</option></optgroup>`;
+    pick.value = String(CID);
   }
 }
 async function refreshDue() {
