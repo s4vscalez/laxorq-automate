@@ -44,11 +44,16 @@ Create a client login from the **Clients** page → "Create a login for this cli
 
 - Leads captured, **conversion rate**, reply rate, average first-response time
 - A conversion **funnel**: Captured → Contacted → Replied → Booked
+- **Bookings by month** with the monthly **booking rate** (appointments booked ÷ leads captured) and this-vs-last-month change — the headline number for judging whether web + social marketing is working
 - Where leads come from, lead quality (hot/warm/cold)
 - A 30-day trend of leads vs conversions
 - Revenue from booked leads (enter a deal value when you mark a lead "Booked")
 
 This page *is* the client report — they can log in anytime instead of waiting for a screenshot.
+
+## Booking calendar
+
+Marking a lead **Booked** opens a form to set the appointment date/time (and optional deal value). Those appointments show up on the **Calendar** tab (month grid + upcoming list) for both you and the client, and feed the monthly booking rate above.
 
 ## How the automation works
 

@@ -72,6 +72,7 @@ db.exec(`
     score_reason TEXT DEFAULT '',
     status TEXT DEFAULT 'new',          -- new | replied | booked | dead | archived
     value REAL DEFAULT 0,               -- deal value once booked/converted
+    appt_at TEXT,                       -- scheduled appointment datetime once booked
     created_at TEXT NOT NULL,
     replied_at TEXT
   );
@@ -135,8 +136,9 @@ const MIGRATIONS = {
   // 2: () => ensureColumn('leads', 'tags', "TEXT DEFAULT ''"),
 };
 function runMigrations() {
-  // Belt-and-suspenders: guarantee the value column on any legacy DB before baselining.
+  // Belt-and-suspenders: guarantee added columns exist on any legacy DB before baselining.
   ensureColumn('leads', 'value', 'REAL DEFAULT 0');
+  ensureColumn('leads', 'appt_at', 'TEXT');
   let current = db.prepare('PRAGMA user_version').get().user_version || 0;
   if (current === 0) { current = SCHEMA_VERSION; db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`); }
   for (let v = current + 1; v <= SCHEMA_VERSION; v++) {
@@ -501,6 +503,24 @@ function analyticsFor(cid) {
     });
   }
 
+  // Monthly booking rate (bookings vs leads) — last 6 months, so clients can see
+  // whether their marketing is turning into actual bookings month over month.
+  const months = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); d.setMonth(d.getMonth() - i);
+    const next = new Date(d); next.setMonth(next.getMonth() + 1);
+    const inM = (iso) => { if (!iso) return false; const t = new Date(iso); return t >= d && t < next; };
+    const leadsM = leads.filter(l => inM(l.created_at)).length;
+    const booksM = leads.filter(l => l.status === 'booked' && inM(l.replied_at)).length;
+    months.push({
+      label: d.toLocaleDateString('en-SG', { month: 'short' }),
+      key: d.toISOString().slice(0, 7),
+      leads: leadsM, bookings: booksM,
+      rate: leadsM ? Math.round(1000 * booksM / leadsM) / 10 : 0,
+    });
+  }
+  const upcomingBookings = leads.filter(l => l.status === 'booked' && l.appt_at && new Date(l.appt_at) >= new Date()).length;
+
   const weekAgo = new Date(Date.now() - 7 * DAY).toISOString();
   const monthAgo = new Date(Date.now() - 30 * DAY).toISOString();
   return {
@@ -521,6 +541,10 @@ function analyticsFor(cid) {
     by_score: ['hot', 'warm', 'cold'].map(s => ({ label: s, count: count(l => l.score === s) })),
     by_status: ['new', 'replied', 'booked', 'dead', 'archived'].map(s => ({ label: s, count: count(l => l.status === s) })),
     trend,
+    by_month: months,
+    this_month: months[5],
+    last_month: months[4],
+    upcoming_bookings: upcomingBookings,
   };
 }
 
@@ -741,6 +765,15 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, analyticsFor(cid));
       }
 
+      if (req.method === 'GET' && p === '/api/bookings') {
+        const cid = resolveCid(user, url);
+        if (!canAccessClient(user, cid)) return send(res, 403, { error: 'forbidden' });
+        const rows = db.prepare(
+          "SELECT id, name, email, phone, value, appt_at, created_at, replied_at FROM leads WHERE client_id = ? AND status = 'booked' ORDER BY COALESCE(appt_at, replied_at) DESC"
+        ).all(cid);
+        return send(res, 200, rows.map(r => ({ ...r, wa: waDigits(r.phone) })));
+      }
+
       // -------- leads
       if (req.method === 'GET' && p === '/api/leads') {
         const cid = resolveCid(user, url);
@@ -772,12 +805,19 @@ const server = http.createServer(async (req, res) => {
         if (!canAccessClient(user, lead.client_id)) return send(res, 403, { error: 'forbidden' });
         if (b.status && ['new', 'replied', 'booked', 'dead', 'archived'].includes(b.status)) {
           const val = b.value !== undefined ? Number(b.value) || 0 : lead.value;
-          db.prepare('UPDATE leads SET status = ?, value = ?, replied_at = COALESCE(replied_at, ?) WHERE id = ?')
-            .run(b.status, val, ['replied', 'booked'].includes(b.status) ? now() : null, id);
+          const appt = b.appt_at !== undefined ? (b.appt_at || null) : lead.appt_at;
+          db.prepare('UPDATE leads SET status = ?, value = ?, appt_at = ?, replied_at = COALESCE(replied_at, ?) WHERE id = ?')
+            .run(b.status, val, appt, ['replied', 'booked'].includes(b.status) ? now() : null, id);
           if (b.status !== 'new') cancelPendingTouches(id);
           if (b.status === 'replied') addEvent(lead.client_id, id, 'lead', `<strong>Re-engaged:</strong> ${esc(lead.name) || 'Lead'} replied — follow-ups cancelled`);
-          if (b.status === 'booked') addEvent(lead.client_id, id, 'lead', `<strong>Booked:</strong> ${esc(lead.name) || 'Lead'} converted${val ? ' (' + val + ')' : ''} 🎉`);
+          if (b.status === 'booked') {
+            const when = appt ? ' for ' + new Date(appt).toLocaleString('en-SG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+            addEvent(lead.client_id, id, 'lead', `<strong>Booked:</strong> ${esc(lead.name) || 'Lead'} converted${val ? ' ($' + val + ')' : ''}${when} 🎉`);
+          }
           if (b.status === 'dead') addEvent(lead.client_id, id, 'system', `${esc(lead.name) || 'Lead'} marked dead — sequence stopped`);
+        } else if (b.appt_at !== undefined) {
+          // reschedule an existing booking without changing status
+          db.prepare('UPDATE leads SET appt_at = ? WHERE id = ?').run(b.appt_at || null, id);
         }
         return send(res, 200, { ok: true });
       }

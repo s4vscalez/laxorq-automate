@@ -169,6 +169,22 @@
   .auth-sub { font-size: 12px; color: var(--silver-dark); margin: 6px 0 16px; line-height: 1.5; }
   .auth-err { color: var(--red); font-size: 12px; margin-top: 10px; display: none; }
 
+  /* calendar */
+  .cal-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .cal-title { font-family: var(--fraunces); font-size: 16px; }
+  .cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 6px; }
+  .cal-weekdays span { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--silver-dark); text-align: center; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .cal-cell { min-height: 66px; border: 0.5px solid rgba(194,194,194,0.12); border-radius: 8px; padding: 6px; font-size: 11px; background: rgba(194,194,194,0.03); }
+  .cal-cell.has { cursor: pointer; transition: background 0.15s; }
+  .cal-cell.has:hover { background: rgba(194,194,194,0.09); }
+  .cal-cell.empty { border: none; background: transparent; }
+  .cal-cell.today { border-color: rgba(76,175,110,0.5); }
+  .cal-daynum { color: var(--silver-dark); }
+  .cal-cell.today .cal-daynum { color: var(--green); font-weight: 600; }
+  .cal-badge { margin-top: 4px; background: rgba(76,175,110,0.18); color: var(--green); border-radius: 6px; padding: 1px 6px; font-size: 10px; display: inline-block; }
+  .cal-name { margin-top: 3px; color: var(--silver); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
   @media (max-width: 720px) {
     .topbar { flex-wrap: wrap; padding: 10px 14px; gap: 8px; padding-top: max(10px, env(safe-area-inset-top)); }
     .logo { font-size: 16px; }
@@ -192,6 +208,12 @@
     .workflow-card { flex-wrap: wrap; }
     .modal { padding: 20px 16px; }
     .btn { padding: 9px 14px; }
+    .nav-item { padding: 6px 2px; }
+    .nav-item span.emoji { font-size: 17px; }
+    .cal-cell { min-height: 48px; padding: 4px; font-size: 10px; }
+    .cal-name { display: none; }
+    .cal-grid, .cal-weekdays { gap: 4px; }
+    .cal-badge { padding: 1px 4px; }
   }
   ::-webkit-scrollbar { width: 4px; height: 4px; } ::-webkit-scrollbar-thumb { background: rgba(194,194,194,0.15); border-radius: 2px; }
 </style>
@@ -260,6 +282,12 @@
           <div class="page-subtitle" id="an-sub">Leads captured and turned into customers</div>
         </div>
         <div class="kpi-grid" id="kpi-grid"></div>
+        <div class="card" id="booking-card">
+          <div class="section-header"><div class="section-title">Bookings by month</div><div class="badge green" id="booking-upcoming" style="display:none"></div></div>
+          <div id="booking-headline" style="margin-bottom:16px"></div>
+          <div class="bars" id="by-month"></div>
+          <div class="muted" style="margin-top:12px">Booking rate = appointments booked ÷ leads captured that month. A rising rate (or more leads at the same rate) means your web + social marketing is working.</div>
+        </div>
         <div class="grid2" style="gap:14px">
           <div class="card"><div class="section-title" style="margin-bottom:14px">Conversion funnel</div><div id="funnel"></div></div>
           <div class="card"><div class="section-title" style="margin-bottom:14px">Where leads come from</div><div class="bars" id="by-source"></div>
@@ -269,6 +297,28 @@
           <div class="section-header"><div class="section-title">Last 30 days</div>
             <div class="muted"><span style="color:var(--silver)">▮</span> Leads &nbsp; <span style="color:var(--green)">▮</span> Conversions</div></div>
           <div class="trend" id="trend"></div>
+        </div>
+      </div>
+
+      <!-- CALENDAR (owner + client) -->
+      <div class="view" id="view-calendar">
+        <div class="page-header">
+          <div class="page-title">Booking <em>calendar</em></div>
+          <div class="page-subtitle">Every booked appointment, at a glance</div>
+        </div>
+        <div class="card">
+          <div class="cal-head">
+            <button class="btn sm" onclick="calShift(-1)" aria-label="Previous month">‹</button>
+            <div class="cal-title" id="cal-title"></div>
+            <button class="btn sm" onclick="calShift(1)" aria-label="Next month">›</button>
+            <button class="btn sm" style="margin-left:auto" onclick="calToday()">Today</button>
+          </div>
+          <div class="cal-weekdays" id="cal-weekdays"></div>
+          <div class="cal-grid" id="cal-grid"></div>
+        </div>
+        <div class="card">
+          <div class="section-title" style="margin-bottom:12px">Upcoming appointments</div>
+          <div id="cal-upcoming"></div>
         </div>
       </div>
 
@@ -343,6 +393,13 @@
   <div class="grid2"><div><label class="fld">Business name</label><input id="ac-name" placeholder="Acme Tuition Centre"></div><div><label class="fld">Niche</label><input id="ac-niche" placeholder="Tuition centre"></div>
   <div><label class="fld">Owner name</label><input id="ac-owner"></div><div><label class="fld">Owner email</label><input id="ac-email"></div></div>
   <div style="display:flex;gap:10px;margin-top:16px"><button class="btn primary" onclick="submitAddClient()">Create workspace</button><button class="btn" onclick="closeModal('modal-client')">Cancel</button></div>
+</div></div>
+
+<div class="modal-bg" id="modal-book" onclick="if(event.target===this)closeModal('modal-book')"><div class="modal">
+  <h3>Mark as booked</h3><div class="muted">Record the appointment and (optionally) the deal value. This counts as a conversion and shows up on the calendar and monthly booking rate.</div>
+  <div class="grid2"><div><label class="fld">Appointment date</label><input id="bk-date" type="date"></div><div><label class="fld">Time</label><input id="bk-time" type="time"></div></div>
+  <label class="fld">Deal value (optional)</label><input id="bk-value" inputmode="decimal" placeholder="e.g. 1500">
+  <div style="display:flex;gap:10px;margin-top:16px"><button class="btn primary" onclick="confirmBooking()">Confirm booking 🎉</button><button class="btn" onclick="closeModal('modal-book')">Cancel</button></div>
 </div></div>
 
 <div class="toast" id="toast"></div>
@@ -420,8 +477,8 @@ async function logout() {
 
 // ---------- nav / shell ----------
 const NAV = {
-  owner: [['dashboard','📊','Dashboard'], ['analytics','📈','Analytics'], ['leads','👤','Leads'], ['queue','📨','Follow-ups','due'], ['clients','🏢','Clients'], ['settings','⚙️','Settings']],
-  client: [['analytics','📈','Results'], ['leads','👤','My leads'], ['queue','📨','Follow-ups','due']],
+  owner: [['dashboard','📊','Dashboard'], ['analytics','📈','Analytics'], ['calendar','📅','Calendar'], ['leads','👤','Leads'], ['queue','📨','Follow-ups','due'], ['clients','🏢','Clients'], ['settings','⚙️','Settings']],
+  client: [['analytics','📈','Results'], ['calendar','📅','Calendar'], ['leads','👤','My leads'], ['queue','📨','Follow-ups','due']],
 };
 function buildNav() {
   const items = NAV[ME.role];
@@ -506,7 +563,69 @@ async function renderAnalytics() {
     const lh = Math.round(96 * (t.leads - t.conversions) / mx), ch = Math.round(96 * t.conversions / mx);
     return `<div class="trend-col" title="${t.label}: ${t.leads} leads, ${t.conversions} booked">${ch?`<div class="trend-conv" style="height:${Math.max(2,ch)}px"></div>`:''}${(t.leads-t.conversions)?`<div class="trend-lead" style="height:${Math.max(2,lh)}px"></div>`:''}</div>`;
   }).join('');
+
+  // bookings by month + this-vs-last-month booking rate
+  const tm = a.this_month, lm = a.last_month, delta = Math.round((tm.rate - lm.rate) * 10) / 10;
+  const up = $('booking-upcoming');
+  up.style.display = a.upcoming_bookings ? '' : 'none';
+  up.textContent = a.upcoming_bookings ? `📅 ${a.upcoming_bookings} upcoming` : '';
+  $('booking-headline').innerHTML =
+    `<span style="font-family:var(--fraunces);font-size:26px">${tm.bookings}</span> booking${tm.bookings!==1?'s':''} this month` +
+    ` &nbsp;·&nbsp; <strong style="color:var(--green)">${tm.rate}%</strong> booking rate <span class="muted">(${tm.bookings} of ${tm.leads} leads)</span>` +
+    ((lm.leads || lm.bookings) ? ` &nbsp;·&nbsp; <span style="color:${delta>=0?'var(--green)':'var(--red)'}">${delta>=0?'↑':'↓'} ${Math.abs(delta)}% vs last month</span>` : '');
+  const rmax = Math.max(1, ...a.by_month.map(m => m.rate));
+  $('by-month').innerHTML = a.by_month.map(m =>
+    `<div class="bar-row" title="${m.label}: ${m.bookings} booked of ${m.leads} leads"><div class="bar-name">${esc(m.label)}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.max(3,100*m.rate/rmax)}%;background:rgba(76,175,110,0.5)"></div></div><div class="bar-val">${m.rate}%</div></div>`).join('');
+
   setDue(0); refreshDue();
+}
+
+// ---------- calendar (owner + client) ----------
+let CAL_Y, CAL_M, CAL_BOOKINGS = [];
+function calToday() { const d = new Date(); CAL_Y = d.getFullYear(); CAL_M = d.getMonth(); renderCalendar(); }
+function calShift(n) { if (CAL_Y === undefined) { const d = new Date(); CAL_Y = d.getFullYear(); CAL_M = d.getMonth(); } CAL_M += n; if (CAL_M < 0) { CAL_M = 11; CAL_Y--; } if (CAL_M > 11) { CAL_M = 0; CAL_Y++; } renderCalendar(); }
+const dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+async function renderCalendar() {
+  CAL_BOOKINGS = await api('/api/bookings?client_id=' + CID);
+  if (CAL_Y === undefined) { const d = new Date(); CAL_Y = d.getFullYear(); CAL_M = d.getMonth(); }
+  const first = new Date(CAL_Y, CAL_M, 1);
+  const startDow = first.getDay();
+  const daysInMonth = new Date(CAL_Y, CAL_M + 1, 0).getDate();
+  $('cal-title').textContent = first.toLocaleDateString('en-SG', { month: 'long', year: 'numeric' });
+  $('cal-weekdays').innerHTML = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<span>${d}</span>`).join('');
+  const byDay = {};
+  for (const b of CAL_BOOKINGS) { if (!b.appt_at) continue; const k = dayKey(new Date(b.appt_at)); (byDay[k] = byDay[k] || []).push(b); }
+  const todayKey = dayKey(new Date());
+  let cells = '';
+  for (let i = 0; i < startDow; i++) cells += '<div class="cal-cell empty"></div>';
+  for (let day = 1; day <= daysInMonth; day++) {
+    const k = `${CAL_Y}-${CAL_M}-${day}`;
+    const list = byDay[k] || [];
+    cells += `<div class="cal-cell ${list.length?'has':''} ${k===todayKey?'today':''}" ${list.length?`onclick="showDayBookings('${k}')"`:''}>
+      <div class="cal-daynum">${day}</div>
+      ${list.length?`<span class="cal-badge">${list.length} 📅</span>`:''}
+      ${list[0]?`<div class="cal-name">${esc(list[0].name)||'Booking'}</div>`:''}</div>`;
+  }
+  $('cal-grid').innerHTML = cells;
+  const upcoming = CAL_BOOKINGS.filter(b => b.appt_at && new Date(b.appt_at) >= new Date()).sort((a,b) => new Date(a.appt_at) - new Date(b.appt_at)).slice(0, 12);
+  $('cal-upcoming').innerHTML = upcoming.length ? upcoming.map(bookingRow).join('') : '<div class="muted">No upcoming appointments. Mark a lead as booked with a date to see it here.</div>';
+  refreshDue();
+}
+function bookingRow(b) {
+  const d = new Date(b.appt_at);
+  const when = d.toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:0.5px solid rgba(194,194,194,0.07)">
+    <div class="act-icon lead">📅</div>
+    <div style="flex:1;min-width:0"><div style="font-size:12px"><strong>${esc(b.name)||'Booking'}</strong>${b.value?` · <span style="color:var(--green)">${money(b.value)}</span>`:''}</div><div class="muted">${when}</div></div>
+    ${b.wa?`<a class="btn sm wa" target="_blank" href="${waLink(b.wa,'Hi '+esc((b.name||'').split(' ')[0]))}">💬</a>`:''}
+    <button class="btn sm" onclick="openLead(${b.id})">Open</button></div>`;
+}
+function showDayBookings(k) {
+  const [y,m,day] = k.split('-').map(Number);
+  const list = CAL_BOOKINGS.filter(b => b.appt_at && dayKey(new Date(b.appt_at)) === k).sort((a,b) => new Date(a.appt_at) - new Date(b.appt_at));
+  const label = new Date(y,m,day).toLocaleDateString('en-SG', { weekday:'long', day:'numeric', month:'long' });
+  $('modal-lead-body').innerHTML = `<h3>${label}</h3><div class="muted">${list.length} appointment${list.length!==1?'s':''}</div><div style="margin-top:12px">${list.map(bookingRow).join('')}</div><div style="margin-top:16px"><button class="btn" onclick="closeModal('modal-lead')">Close</button></div>`;
+  $('modal-lead').classList.add('open');
 }
 
 // ---------- leads ----------
@@ -546,11 +665,22 @@ async function openLead(id) {
     </div>`;
   $('modal-lead').classList.add('open');
 }
-async function bookLead(id) {
-  const v = prompt('Deal value for this booking? (optional, numbers only — leave blank to skip)', '');
-  if (v === null) return;
-  await api('/api/leads/' + id, { method: 'PATCH', body: JSON.stringify({ status: 'booked', value: Number(v.replace(/[^\d.]/g,'')) || 0 }) });
-  closeModal('modal-lead'); toast('Booked! Conversion recorded'); refresh();
+let BOOK_LEAD_ID = null;
+function bookLead(id) {
+  BOOK_LEAD_ID = id;
+  $('bk-date').value = new Date().toISOString().slice(0, 10);
+  $('bk-time').value = '';
+  $('bk-value').value = '';
+  $('modal-book').classList.add('open');
+}
+async function confirmBooking() {
+  const date = $('bk-date').value, time = $('bk-time').value;
+  const value = Number(($('bk-value').value || '').replace(/[^\d.]/g, '')) || 0;
+  let appt_at = null;
+  if (date) { const dt = new Date(date + 'T' + (time || '09:00')); if (!isNaN(dt)) appt_at = dt.toISOString(); }
+  await api('/api/leads/' + BOOK_LEAD_ID, { method: 'PATCH', body: JSON.stringify({ status: 'booked', value, appt_at }) });
+  closeModal('modal-book'); closeModal('modal-lead');
+  toast(appt_at ? 'Booked! Added to the calendar' : 'Booked! Conversion recorded'); refresh();
 }
 async function setLeadStatus(id, status) {
   await api('/api/leads/' + id, { method: 'PATCH', body: JSON.stringify({ status }) });
@@ -689,6 +819,7 @@ async function refresh() {
   try {
     if (CURRENT_VIEW === 'dashboard') await renderDashboard();
     else if (CURRENT_VIEW === 'analytics') await renderAnalytics();
+    else if (CURRENT_VIEW === 'calendar') await renderCalendar();
     else if (CURRENT_VIEW === 'leads') await renderLeads();
     else if (CURRENT_VIEW === 'queue') await renderQueue();
     else if (CURRENT_VIEW === 'clients') await renderClients();
