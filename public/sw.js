@@ -1,7 +1,7 @@
 // Laxorq Automate service worker — makes the dashboard installable + usable offline.
 // Strategy: never cache /api (always live data); network-first for the app shell with a
 // cache fallback so the installed app still opens without a connection.
-const CACHE = 'laxorq-automate-v1';
+const CACHE = 'laxorq-automate-v2';
 const SHELL = ['/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-180.png'];
 
 self.addEventListener('install', (e) => {
@@ -30,4 +30,28 @@ self.addEventListener('fetch', (e) => {
       })
       .catch(() => caches.match(request).then(hit => hit || caches.match('/')))
   );
+});
+
+// ---- Push notifications: fire even when the app is closed ----
+self.addEventListener('push', (e) => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch { data = { body: e.data && e.data.text() }; }
+  const title = data.title || 'Laxorq Automate';
+  e.waitUntil(self.registration.showNotification(title, {
+    body: data.body || '',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    vibrate: [80, 40, 80],
+    tag: data.tag || undefined,
+    data: { url: data.url || '/' },
+  }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const target = (e.notification.data && e.notification.data.url) || '/';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    for (const c of list) { if ('focus' in c) { c.navigate && c.navigate(target); return c.focus(); } }
+    return self.clients.openWindow(target);
+  }));
 });

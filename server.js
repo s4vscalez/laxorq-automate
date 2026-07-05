@@ -56,6 +56,7 @@ db.exec(`
     owner_name TEXT DEFAULT '',
     owner_email TEXT DEFAULT '',
     owner_whatsapp TEXT DEFAULT '',
+    website TEXT DEFAULT '',
     form_token TEXT UNIQUE NOT NULL,
     settings_json TEXT DEFAULT '{}',
     created_at TEXT NOT NULL
@@ -121,6 +122,22 @@ db.exec(`
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS visits (
+    id INTEGER PRIMARY KEY,
+    client_id INTEGER NOT NULL,
+    path TEXT DEFAULT '',
+    referrer TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS push_subs (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    client_id INTEGER,
+    endpoint TEXT UNIQUE NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
 `);
 
 // ---- Safe schema evolution ----------------------------------------------------
@@ -139,6 +156,7 @@ function runMigrations() {
   // Belt-and-suspenders: guarantee added columns exist on any legacy DB before baselining.
   ensureColumn('leads', 'value', 'REAL DEFAULT 0');
   ensureColumn('leads', 'appt_at', 'TEXT');
+  ensureColumn('clients', 'website', "TEXT DEFAULT ''");
   let current = db.prepare('PRAGMA user_version').get().user_version || 0;
   if (current === 0) { current = SCHEMA_VERSION; db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`); }
   for (let v = current + 1; v <= SCHEMA_VERSION; v++) {
@@ -186,10 +204,13 @@ function verifyPw(pw, stored) {
     return crypto.timingSafeEqual(dk, Buffer.from(h, 'hex'));
   } catch { return false; }
 }
+// Long-lived, self-renewing sessions so you sign in once per device and stay in.
+// 400 days = the browser cap for persistent cookies; refreshed on every use below.
+const SESSION_DAYS = 400;
 function createSession(userId) {
   const token = crypto.randomBytes(32).toString('hex');
   db.prepare('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?,?,?,?)')
-    .run(token, userId, now(), new Date(Date.now() + 30 * DAY).toISOString());
+    .run(token, userId, now(), new Date(Date.now() + SESSION_DAYS * DAY).toISOString());
   return token;
 }
 function parseCookies(req) {
@@ -206,6 +227,10 @@ function currentUser(req) {
   const s = db.prepare('SELECT * FROM sessions WHERE token = ?').get(sid);
   if (!s) return null;
   if (s.expires_at < now()) { db.prepare('DELETE FROM sessions WHERE token = ?').run(sid); return null; }
+  // Sliding expiry: keep active sessions alive so the user never has to log in again.
+  if (new Date(s.expires_at).getTime() - Date.now() < (SESSION_DAYS - 1) * DAY) {
+    db.prepare('UPDATE sessions SET expires_at = ? WHERE token = ?').run(new Date(Date.now() + SESSION_DAYS * DAY).toISOString(), sid);
+  }
   return db.prepare('SELECT * FROM users WHERE id = ?').get(s.user_id) || null;
 }
 function sanitizeUser(u) {
@@ -214,7 +239,7 @@ function sanitizeUser(u) {
   return { id: u.id, email: u.email, role: u.role, client_id: u.client_id, name: u.name, client_name: client ? client.name : null };
 }
 function sessionCookie(token, secure) {
-  return `sid=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${30 * 24 * 3600}${secure ? '; Secure' : ''}`;
+  return `sid=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_DAYS * 24 * 3600}${secure ? '; Secure' : ''}`;
 }
 function isSecure(req) { return (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https'; }
 function canAccessClient(user, cid) { return user.role === 'owner' || Number(cid) === Number(user.client_id); }
@@ -379,6 +404,70 @@ function sendEmail({ to, subject, body }) {
   });
 }
 
+// ---------------------------------------------------------------- WEB PUSH (RFC 8291 + VAPID, zero-dep)
+const b64url = (buf) => Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const b64urlDecode = (str) => Buffer.from(String(str).replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+
+// One VAPID keypair per install, generated on first use and stored in settings.
+function getVapid() {
+  let pub = getSetting('vapid_public'), priv = getSetting('vapid_private');
+  if (!pub || !priv) {
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    pub = b64url(publicKey.export({ type: 'spki', format: 'der' }).subarray(-65)); // uncompressed point
+    priv = privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64');
+    setSetting('vapid_public', pub); setSetting('vapid_private', priv);
+  }
+  return { pub, priv };
+}
+function vapidJwt(audience) {
+  const header = b64url(JSON.stringify({ typ: 'JWT', alg: 'ES256' }));
+  const body = b64url(JSON.stringify({
+    aud: audience, exp: Math.floor(Date.now() / 1000) + 12 * 3600,
+    sub: 'mailto:' + (getSetting('smtp_from') || getSetting('smtp_user') || 'admin@laxorq.local'),
+  }));
+  const key = crypto.createPrivateKey({ key: Buffer.from(getVapid().priv, 'base64'), format: 'der', type: 'pkcs8' });
+  const sig = crypto.sign('SHA256', Buffer.from(header + '.' + body), { key, dsaEncoding: 'ieee-p1363' });
+  return `${header}.${body}.${b64url(sig)}`;
+}
+// RFC 8291 payload encryption (aes128gcm)
+function encryptPush(payload, p256dhB64, authB64) {
+  const uaPublic = b64urlDecode(p256dhB64);
+  const authSecret = b64urlDecode(authB64);
+  const ecdh = crypto.createECDH('prime256v1');
+  const asPublic = ecdh.generateKeys();
+  const shared = ecdh.computeSecret(uaPublic);
+  const salt = crypto.randomBytes(16);
+  const keyInfo = Buffer.concat([Buffer.from('WebPush: info\0'), uaPublic, asPublic]);
+  const ikm = Buffer.from(crypto.hkdfSync('sha256', shared, authSecret, keyInfo, 32));
+  const cek = Buffer.from(crypto.hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: aes128gcm\0'), 16));
+  const nonce = Buffer.from(crypto.hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: nonce\0'), 12));
+  const cipher = crypto.createCipheriv('aes-128-gcm', cek, nonce);
+  const plain = Buffer.concat([Buffer.from(payload, 'utf8'), Buffer.from([0x02])]); // single-record delimiter
+  const enc = Buffer.concat([cipher.update(plain), cipher.final(), cipher.getAuthTag()]);
+  const head = Buffer.concat([salt, Buffer.from([0, 0, 0x10, 0]), Buffer.from([asPublic.length]), asPublic]); // rs=4096
+  return Buffer.concat([head, enc]);
+}
+async function sendPush(sub, payloadObj) {
+  const body = encryptPush(JSON.stringify(payloadObj), sub.p256dh, sub.auth);
+  const res = await fetch(sub.endpoint, {
+    method: 'POST',
+    headers: {
+      'TTL': '86400', 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream',
+      'Authorization': `vapid t=${vapidJwt(new URL(sub.endpoint).origin)}, k=${getVapid().pub}`,
+    },
+    body,
+  });
+  if (res.status === 404 || res.status === 410) db.prepare('DELETE FROM push_subs WHERE endpoint = ?').run(sub.endpoint);
+  return res.status;
+}
+// Notify everyone who should hear about this client: the client's own logins + all owners.
+async function notifyClient(clientId, payloadObj) {
+  const subs = db.prepare(
+    "SELECT ps.* FROM push_subs ps JOIN users u ON u.id = ps.user_id WHERE u.role = 'owner' OR u.client_id = ?"
+  ).all(clientId);
+  for (const s of subs) { try { await sendPush(s, payloadObj); } catch (e) { console.error('push send:', e.message); } }
+}
+
 // ---------------------------------------------------------------- LEAD PIPELINE
 function isoPlus(ms) { return new Date(Date.now() + ms).toISOString(); }
 
@@ -393,6 +482,7 @@ async function processNewLead(leadId) {
   db.prepare('UPDATE leads SET score = ?, score_reason = ? WHERE id = ?').run(qual.score, qual.reason, lead.id);
   const flame = qual.score === 'hot' ? ' 🔥' : '';
   addEvent(client.id, lead.id, 'lead', `<strong>New lead:</strong> ${esc(lead.name) || 'Unknown'} submitted an enquiry — qualified as ${qual.score[0].toUpperCase() + qual.score.slice(1)}${flame}`);
+  if (qual.score === 'hot') notifyClient(client.id, { title: '🔥 Hot lead — take over', body: `${lead.name || 'A new lead'} needs a personal reply now`, url: '/' }).catch(() => {});
 
   if (wfEnabled(client.id, 'instant_reply')) {
     const body = aiReply || fillTemplate(tpl.instant_reply, lead, client);
@@ -521,6 +611,13 @@ function analyticsFor(cid) {
   }
   const upcomingBookings = leads.filter(l => l.status === 'booked' && l.appt_at && new Date(l.appt_at) >= new Date()).length;
 
+  // Website tracking: visits (from the pixel snippet) → leads that came from the site
+  const monthStart = (() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d.toISOString(); })();
+  const visitsTotal = db.prepare('SELECT COUNT(*) AS c FROM visits WHERE client_id = ?').get(cid).c;
+  const visitsMonth = db.prepare('SELECT COUNT(*) AS c FROM visits WHERE client_id = ? AND created_at >= ?').get(cid, monthStart).c;
+  const siteLeads = leads.filter(l => l.source === 'form' || (l.source && l.source.includes('.'))).length;
+  const website = (q.clientById.get(cid) || {}).website || '';
+
   const weekAgo = new Date(Date.now() - 7 * DAY).toISOString();
   const monthAgo = new Date(Date.now() - 30 * DAY).toISOString();
   return {
@@ -545,6 +642,11 @@ function analyticsFor(cid) {
     this_month: months[5],
     last_month: months[4],
     upcoming_bookings: upcomingBookings,
+    website,
+    visits_total: visitsTotal,
+    visits_month: visitsMonth,
+    site_leads: siteLeads,
+    visit_to_lead: visitsTotal ? Math.round(1000 * siteLeads / visitsTotal) / 10 : null,
   };
 }
 
@@ -590,6 +692,13 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/favicon.ico')
       return sendFile(res, path.join(PUBLIC_DIR, 'icons', 'icon-32.png'));
 
+    // ---- tracking pixel: clients paste <script src="/px.js?t=TOKEN"> on their site
+    if (req.method === 'GET' && p === '/px.js') {
+      const js = `(function(){try{var s=document.currentScript;var t=new URL(s.src).searchParams.get('t');if(!t)return;var base=s.src.split('/px.js')[0];fetch(base+'/api/public/track',{method:'POST',headers:{'content-type':'application/json'},keepalive:true,body:JSON.stringify({token:t,path:location.pathname,ref:document.referrer})}).catch(function(){});}catch(e){}})();`;
+      res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=3600', 'access-control-allow-origin': '*' });
+      return res.end(js);
+    }
+
     // ---- health / version (public, used by the desktop app + update checks)
     if (req.method === 'GET' && p === '/api/health') {
       return send(res, 200, {
@@ -617,6 +726,14 @@ const server = http.createServer(async (req, res) => {
         const r = db.prepare('INSERT INTO leads (client_id, name, email, phone, source, message, created_at) VALUES (?,?,?,?,?,?,?)')
           .run(c.id, String(b.name || '').slice(0, 200), String(b.email || '').slice(0, 200), String(b.phone || '').slice(0, 50), String(b.source || 'form').slice(0, 50), String(b.message || '').slice(0, 4000), now());
         processNewLead(Number(r.lastInsertRowid)).catch(e => console.error('processNewLead:', e));
+        return send(res, 200, { ok: true });
+      }
+      if (req.method === 'POST' && p === '/api/public/track') {
+        const b = await readBody(req);
+        const c = q.clientByToken.get(b.token || '');
+        if (!c) return send(res, 404, { error: 'unknown token' });
+        db.prepare('INSERT INTO visits (client_id, path, referrer, created_at) VALUES (?,?,?,?)')
+          .run(c.id, String(b.path || '').slice(0, 300), String(b.ref || '').slice(0, 300), now());
         return send(res, 200, { ok: true });
       }
       return send(res, 404, { error: 'not found' });
@@ -660,6 +777,26 @@ const server = http.createServer(async (req, res) => {
       if (!user) return send(res, 401, { error: 'not logged in' });
       const ownerOnly = () => { if (user.role !== 'owner') { send(res, 403, { error: 'owner only' }); return true; } return false; };
 
+      // -------- push notifications (owner + client, per device)
+      if (req.method === 'GET' && p === '/api/push/vapid') {
+        return send(res, 200, { publicKey: getVapid().pub });
+      }
+      if (req.method === 'POST' && p === '/api/push/subscribe') {
+        const b = await readBody(req);
+        const k = b.keys || {};
+        if (!b.endpoint || !k.p256dh || !k.auth) return send(res, 400, { error: 'invalid subscription' });
+        db.prepare('INSERT INTO push_subs (user_id, client_id, endpoint, p256dh, auth, created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id, client_id=excluded.client_id, p256dh=excluded.p256dh, auth=excluded.auth')
+          .run(user.id, user.client_id ?? null, String(b.endpoint), String(k.p256dh), String(k.auth), now());
+        return send(res, 200, { ok: true });
+      }
+      if (req.method === 'POST' && p === '/api/push/test') {
+        const subs = db.prepare('SELECT * FROM push_subs WHERE user_id = ?').all(user.id);
+        if (!subs.length) return send(res, 400, { error: 'no device subscribed yet' });
+        let ok = 0;
+        for (const s of subs) { try { const st = await sendPush(s, { title: 'Laxorq Automate', body: 'Notifications are working on this device 🎉', url: '/' }); if (st < 300) ok++; } catch {} }
+        return send(res, 200, { ok: true, sent: ok, devices: subs.length });
+      }
+
       // -------- clients
       if (req.method === 'GET' && p === '/api/clients') {
         if (user.role === 'owner') return send(res, 200, db.prepare('SELECT * FROM clients ORDER BY id').all());
@@ -680,8 +817,8 @@ const server = http.createServer(async (req, res) => {
         if (!c) return send(res, 404, { error: 'no such client' });
         const s = JSON.parse(c.settings_json || '{}');
         if (b.templates) s.templates = { ...clientTemplates(c), ...b.templates };
-        db.prepare('UPDATE clients SET name=?, niche=?, owner_name=?, owner_email=?, owner_whatsapp=?, settings_json=? WHERE id=?')
-          .run(b.name ?? c.name, b.niche ?? c.niche, b.owner_name ?? c.owner_name, b.owner_email ?? c.owner_email, b.owner_whatsapp ?? c.owner_whatsapp, JSON.stringify(s), id);
+        db.prepare('UPDATE clients SET name=?, niche=?, owner_name=?, owner_email=?, owner_whatsapp=?, website=?, settings_json=? WHERE id=?')
+          .run(b.name ?? c.name, b.niche ?? c.niche, b.owner_name ?? c.owner_name, b.owner_email ?? c.owner_email, b.owner_whatsapp ?? c.owner_whatsapp, b.website ?? c.website, JSON.stringify(s), id);
         return send(res, 200, q.clientById.get(id));
       }
 
@@ -813,6 +950,7 @@ const server = http.createServer(async (req, res) => {
           if (b.status === 'booked') {
             const when = appt ? ' for ' + new Date(appt).toLocaleString('en-SG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
             addEvent(lead.client_id, id, 'lead', `<strong>Booked:</strong> ${esc(lead.name) || 'Lead'} converted${val ? ' ($' + val + ')' : ''}${when} 🎉`);
+            notifyClient(lead.client_id, { title: '📅 New booking', body: `${lead.name || 'A lead'} is booked${when}`, url: '/' }).catch(() => {});
           }
           if (b.status === 'dead') addEvent(lead.client_id, id, 'system', `${esc(lead.name) || 'Lead'} marked dead — sequence stopped`);
         } else if (b.appt_at !== undefined) {

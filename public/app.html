@@ -239,6 +239,7 @@
     <div class="topbar-right">
       <div class="badge live"><span class="live-dot"></span> live</div>
       <button class="btn sm" id="install-btn" style="display:none" onclick="doInstall()">⤓ Install app</button>
+      <button class="btn sm" id="notif-btn" onclick="enablePush()" title="Get alerts for hot leads and new bookings">🔔 Notifications</button>
       <select class="client-pick" id="client-pick" onchange="switchClient(this.value)" style="display:none"></select>
       <div class="user-chip"><span id="chip-email"></span><span class="user-role" id="chip-role"></span></div>
       <button class="btn sm" onclick="logout()">Sign out</button>
@@ -282,6 +283,7 @@
           <div class="page-subtitle" id="an-sub">Leads captured and turned into customers</div>
         </div>
         <div class="kpi-grid" id="kpi-grid"></div>
+        <div class="card" id="site-card" style="display:none"></div>
         <div class="card" id="booking-card">
           <div class="section-header"><div class="section-title">Bookings by month</div><div class="badge green" id="booking-upcoming" style="display:none"></div></div>
           <div id="booking-headline" style="margin-bottom:16px"></div>
@@ -491,6 +493,7 @@ function startApp() {
   $('chip-email').textContent = ME.role === 'client' ? (ME.client_name || ME.email) : ME.email;
   $('chip-role').textContent = ME.role;
   buildNav();
+  updateNotifButton();
   if (ME.role === 'client') { $('client-pick').style.display = 'none'; CID = ME.client_id; }
   loadClients().then(() => { show(ME.role === 'owner' ? 'dashboard' : 'analytics'); });
   if (!window._pollStarted) { window._pollStarted = true; setInterval(() => { if (!document.querySelector('.modal-bg.open')) refresh(); }, 15000); }
@@ -576,6 +579,19 @@ async function renderAnalytics() {
   const rmax = Math.max(1, ...a.by_month.map(m => m.rate));
   $('by-month').innerHTML = a.by_month.map(m =>
     `<div class="bar-row" title="${m.label}: ${m.bookings} booked of ${m.leads} leads"><div class="bar-name">${esc(m.label)}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.max(3,100*m.rate/rmax)}%;background:rgba(76,175,110,0.5)"></div></div><div class="bar-val">${m.rate}%</div></div>`).join('');
+
+  // website tracking card
+  const sc = $('site-card');
+  if (a.website || a.visits_total) {
+    sc.style.display = '';
+    const vtl = a.visit_to_lead == null ? '—' : a.visit_to_lead + '%';
+    sc.innerHTML = `<div class="section-header"><div class="section-title">Website</div>${a.website?`<a class="muted" href="${esc(a.website)}" target="_blank" rel="noopener" style="text-decoration:none">${esc(a.website.replace(/^https?:\/\//,''))} ↗</a>`:''}</div>
+      <div style="display:flex;gap:26px;flex-wrap:wrap;font-size:13px">
+        <div><span style="font-family:var(--fraunces);font-size:24px">${a.visits_total}</span> <span class="muted">visits<br>${a.visits_month} this month</span></div>
+        <div><span style="font-family:var(--fraunces);font-size:24px">${a.site_leads}</span> <span class="muted">leads<br>from the site</span></div>
+        <div><span style="font-family:var(--fraunces);font-size:24px;color:var(--green)">${vtl}</span> <span class="muted">visit → lead<br>conversion</span></div>
+      </div>`;
+  } else { sc.style.display = 'none'; }
 
   setDue(0); refreshDue();
 }
@@ -729,6 +745,7 @@ async function renderClients() {
   $('clients-list').innerHTML = CLIENTS.map(c => {
     const formUrl = `${base}/form?t=${c.form_token}`;
     const embed = `<iframe src="${formUrl}" style="width:100%;max-width:480px;height:540px;border:none;border-radius:12px"></iframe>`;
+    const trackSnippet = `<script async src="${base}/px.js?t=${c.form_token}"><\/script>`;
     const logins = users.filter(u => u.client_id === c.id);
     return `<div class="card">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><strong style="font-size:14px">${esc(c.name)}</strong><span class="muted">${esc(c.niche)}</span>
@@ -741,6 +758,12 @@ async function renderClients() {
         ${logins.map(u => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap"><span class="badge gray">👤 ${esc(u.email)}</span>
           <button class="btn sm" onclick="resetClientPw(${u.id})">Reset password</button><button class="btn sm danger" onclick="deleteClientLogin(${u.id})">Remove</button></div>`).join('') || '<div class="muted" style="margin-bottom:6px">No client login yet.</div>'}
         <button class="btn sm" onclick="addClientLogin(${c.id})">＋ Create a login for this client</button></div>
+      <div style="margin-top:14px"><label class="fld">Client website (track visits + leads from their site)</label>
+        <div style="display:flex;gap:6px"><input id="cw-${c.id}" value="${esc(c.website||'')}" placeholder="https://theirsite.com" style="flex:1">
+        <button class="btn sm" onclick="saveClientWebsite(${c.id})">Save</button></div>
+        <label class="fld" style="margin-top:10px">Tracking snippet (paste once in the site's &lt;head&gt; to count visits)</label>
+        <div style="display:flex;gap:6px"><span class="mono" style="flex:1;padding:8px">${esc(trackSnippet)}</span>
+        <button class="btn sm" onclick='navigator.clipboard.writeText(${JSON.stringify(trackSnippet)});toast("Snippet copied")'>Copy</button></div></div>
       <details style="margin-top:12px"><summary style="font-size:11px;color:var(--silver-dark);cursor:pointer">Edit details &amp; message templates</summary>
         <div class="grid2"><div><label class="fld">Business name</label><input id="cn-${c.id}" value="${esc(c.name)}"></div><div><label class="fld">Niche</label><input id="cnh-${c.id}" value="${esc(c.niche)}"></div>
         <div><label class="fld">Owner name</label><input id="co-${c.id}" value="${esc(c.owner_name)}"></div><div><label class="fld">Owner email (hot-lead alerts)</label><input id="ce-${c.id}" value="${esc(c.owner_email)}"></div></div>
@@ -759,6 +782,10 @@ async function saveClient(id) {
   for (const k of ['instant_reply','touch1_whatsapp','touch2_email_subject','touch2_email','touch3_call']) { const el = $(`tpl-${k}-${id}`); if (el) templates[k] = el.value; }
   await api('/api/clients/' + id, { method: 'PATCH', body: JSON.stringify({ name: $('cn-'+id).value, niche: $('cnh-'+id).value, owner_name: $('co-'+id).value, owner_email: $('ce-'+id).value, templates }) });
   toast('Client saved'); await loadClients(); renderClients();
+}
+async function saveClientWebsite(id) {
+  await api('/api/clients/' + id, { method: 'PATCH', body: JSON.stringify({ website: $('cw-' + id).value.trim() }) });
+  toast('Website saved'); await loadClients();
 }
 async function addClientLogin(clientId) {
   const email = prompt("Client's login email?"); if (!email) return;
@@ -831,6 +858,31 @@ async function refresh() {
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; $('install-btn').style.display = ''; });
 async function doInstall() { if (!deferredInstall) return; deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; $('install-btn').style.display = 'none'; }
+
+// ---------- push notifications ----------
+const pushSupported = () => ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window);
+function urlB64ToUint8(b) { const pad = '='.repeat((4 - b.length % 4) % 4); const s = (b + pad).replace(/-/g, '+').replace(/_/g, '/'); const raw = atob(s); return Uint8Array.from([...raw].map(c => c.charCodeAt(0))); }
+function updateNotifButton() {
+  const btn = $('notif-btn'); if (!btn) return;
+  if (!pushSupported()) { btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  btn.textContent = Notification.permission === 'granted' ? '🔔 Alerts on' : '🔔 Notifications';
+}
+async function enablePush() {
+  if (!pushSupported()) return toast('This device or browser does not support push. On iPhone, add the app to your Home Screen first.', false);
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { updateNotifButton(); return toast('Notifications were not allowed', false); }
+    const reg = await navigator.serviceWorker.ready;
+    const { publicKey } = await api('/api/push/vapid');
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(publicKey) });
+    await api('/api/push/subscribe', { method: 'POST', body: JSON.stringify(sub) });
+    updateNotifButton();
+    toast('Notifications on for this device ✓');
+    try { await api('/api/push/test', { method: 'POST', body: '{}' }); } catch {}
+  } catch (e) { toast('Could not enable notifications: ' + e.message, false); }
+}
 
 boot();
 </script>

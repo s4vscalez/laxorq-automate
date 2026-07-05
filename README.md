@@ -51,6 +51,22 @@ Create a client login from the **Clients** page → "Create a login for this cli
 
 This page *is* the client report — they can log in anytime instead of waiting for a screenshot.
 
+## Website tracking
+
+Each client can have their **website** saved (Clients page). Paste the one-line **tracking snippet** into the site's `<head>` and Laxorq counts visits; the embedded lead form tags each lead with where it came from (the site's domain, or a `utm_source`). The Results page then shows **visits → leads from the site → visit-to-lead conversion**, so a client can see whether their site traffic is actually turning into enquiries.
+
+## Notifications (push, even when the app is closed)
+
+Tap **🔔 Notifications** in the top bar to turn on push for that device. You (and clients) get an alert for:
+- **Hot leads** that need a personal reply ("take over")
+- **New bookings** / appointments
+
+Works on desktop (Chrome/Edge/Firefox) and on phones once the app is added to the Home Screen (iOS requires the installed PWA). Each device is enabled once.
+
+## Stay signed in
+
+Sessions last 400 days and refresh on every use, so you sign in once per device (phone, desktop) and stay logged in — no repeated logins.
+
 ## Booking calendar
 
 Marking a lead **Booked** opens a form to set the appointment date/time (and optional deal value). Those appointments show up on the **Calendar** tab (month grid + upcoming list) for both you and the client, and feed the monthly booking rate above.

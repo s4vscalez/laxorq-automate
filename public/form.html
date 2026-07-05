@@ -86,7 +86,15 @@ async function submitLead(e) {
   const get = id => document.getElementById(id).value.trim();
   const err = document.getElementById('err');
   err.style.display = 'none';
-  const body = { token, name: get('name'), phone: get('phone'), email: get('email'), message: get('message'), source: 'form' };
+  // Attribute the lead to where it came from: ?utm_source, then the page the form is
+  // embedded on (its host), else just "form".
+  let source = 'form';
+  try {
+    const utm = new URLSearchParams(location.search).get('utm_source');
+    if (utm) source = utm;
+    else if (document.referrer) source = new URL(document.referrer).hostname || 'form';
+  } catch (e) {}
+  const body = { token, name: get('name'), phone: get('phone'), email: get('email'), message: get('message'), source };
   if (!body.name && !body.phone && !body.email) {
     err.textContent = 'Please leave at least your name and a way to reach you.';
     err.style.display = 'block';
